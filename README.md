@@ -6,7 +6,7 @@ A high-performance, mobile-first digital restaurant menu web application built w
 
 ## 🚀 Live Demo
 
-🔗 **[View Live Demo on Vercel](https://your-vercel-link.vercel.app)** _(Replace with your actual link)_
+🔗 **[View Live Demo on Vercel](https://interactive-restaurant-menu-one.vercel.app/)** _(Replace with your actual link)_
 
 ---
 
