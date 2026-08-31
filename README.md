@@ -1,36 +1,42 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# 🍔 Smart Restaurant QR Menu & WhatsApp Ordering System
 
-## Getting Started
+A high-performance, mobile-first digital restaurant menu web application built with **Next.js 14 (App Router)**, **TypeScript**, and **Tailwind CSS**. It allows customers to browse categorized dishes, manage a dynamic shopping cart, and submit complete orders directly to the restaurant's WhatsApp with one click.
 
-First, run the development server:
+---
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
+## 🚀 Live Demo
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+🔗 **[View Live Demo on Vercel](https://your-vercel-link.vercel.app)** _(Replace with your actual link)_
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+---
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## ✨ Key Features
 
-## Learn More
+- ⚡ **Ultra Fast Performance:** Built on Next.js 14 with Server-Side optimizations.
+- 📱 **Mobile-First UX:** Seamless, app-like ordering experience designed for mobile devices.
+- 🛍️ **Real-Time Cart System:** Instant item additions, quantity management, and dynamic total calculation.
+- 📲 **Instant WhatsApp Checkout:** Generates pre-formatted Arabic/English order summaries directly to the store owner's WhatsApp (No complex SMS gateways needed).
+- 🏷️ **Categorized Filtering:** Fast interactive category switcher (Burgers, Pizza, Appetizers, Drinks).
+- 🎉 **Engaging Micro-interactions:** Confetti animation on checkout to boost conversion.
+- 🎨 **Modern Dark UI:** Premium aesthetic styled with Tailwind CSS and Lucide Icons.
 
-To learn more about Next.js, take a look at the following resources:
+---
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## 🛠️ Tech Stack
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+- **Framework:** Next.js 14 (App Router)
+- **Language:** TypeScript
+- **Styling:** Tailwind CSS
+- **Icons:** Lucide React
+- **Animations:** Canvas-Confetti
+- **Deployment:** Vercel
 
-## Deploy on Vercel
+---
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## 💻 Getting Started (Local Development)
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+1. **Clone the repository:**
+   ```bash
+   git clone https://github.com/YOUR_USERNAME/food-menu.git
+   cd food-menu
+   ```
