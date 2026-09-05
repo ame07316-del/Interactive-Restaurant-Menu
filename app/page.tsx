@@ -1,252 +1,385 @@
 "use client";
-import React, { useState } from "react";
-import { ShoppingBag, Plus, Minus, Trash2, CheckCircle2, PhoneCall, Utensils } from "lucide-react";
-import confetti from "canvas-confetti";
 
-// داتا الأصناف الوهمية (شكلها احترافي جداً)
-const MENU_ITEMS = [
-  {
-    id: 1,
-    name: "برجر السعادة دبل تشيز",
-    category: "برجر",
-    price: 180,
-    image: "https://images.unsplash.com/photo-1568901346375-23c9450c58cd?w=500&q=80",
-    description: "قطعتين لحم بلدي 200 جرام مع صوص الشيدر السايح والبصل المكرمل"
-  },
-  {
-    id: 2,
-    name: "بيتزا رانش باربيكيو",
-    category: "بيتزا",
-    price: 220,
-    image: "https://images.unsplash.com/photo-1513104890138-7c749659a591?w=500&q=80",
-    description: "عجينة إيطالية خفيفة مع قطع الدجاج وصوص الرانش الغني"
-  },
-  {
-    id: 3,
-    name: "سماش برجر كلاسيك",
-    category: "برجر",
-    price: 150,
-    image: "https://images.unsplash.com/photo-1586190848861-99aa4a171e90?w=500&q=80",
-    description: "شريحة لحم مقرمشة الأطراف مع صوص خاص وخيار مخلل"
-  },
-  {
-    id: 4,
-    name: "بطاطس كريسبي بالجبنة",
-    category: "مقبلات",
-    price: 65,
-    image: "https://images.unsplash.com/photo-1573080496219-bb080dd4f877?w=500&q=80",
-    description: "أصابع بطاطس ذهبية مغطاة بجبنة شيدر وهالبينو"
-  },
-  {
-    id: 5,
-    name: "موهيتو فراولة وبلو بيري",
-    category: "مشروبات",
-    price: 55,
-    image: "https://images.unsplash.com/photo-1513558161293-cdaf765ed2fd?w=500&q=80",
-    description: "مشروب منعش بالليمون والنعناع والفواكه الطازجة"
-  }
-];
+import { useMemo, useState } from "react";
+import {
+  Clock,
+  Utensils,
+  Search,
+  Settings2,
+  ShoppingBag,
+  Sparkles,
+  Store,
+  Phone,
+  MapPin,
+  ChevronLeft,
+} from "lucide-react";
+import { useMenu } from "@/lib/use-menu";
+import { useCart } from "@/lib/use-cart";
+import { computeTotals, formatPrice, pick } from "@/lib/format";
+import { cx } from "@/lib/cx";
+import { DishCard, DishImage } from "@/components/public/dish-card";
+import { CartSheet } from "@/components/public/cart-sheet";
 
-const CATEGORIES = ["الكل", "برجر", "بيتزا", "مقبلات", "مشروبات"];
+const ALL = "all";
 
 export default function Home() {
-  const [selectedCategory, setSelectedCategory] = useState("الكل");
-  const [cart, setCart] = useState<{ item: typeof MENU_ITEMS[0]; quantity: number }[]>([]);
-  const [isCartOpen, setIsCartOpen] = useState(false);
-  const [customerName, setCustomerName] = useState("");
-  const [customerAddress, setCustomerAddress] = useState("");
+  const { data } = useMenu();
+  const { brand, commerce, contact, categories, items } = data;
+  const lang = brand.language;
+  const en = lang === "en";
 
-  const filteredItems = selectedCategory === "الكل" 
-    ? MENU_ITEMS 
-    : MENU_ITEMS.filter(item => item.category === selectedCategory);
+  const [activeCategory, setActiveCategory] = useState<string>(ALL);
+  const [query, setQuery] = useState("");
+  const [cartOpen, setCartOpen] = useState(false);
 
-  const addToCart = (item: typeof MENU_ITEMS[0]) => {
-    setCart(prev => {
-      const existing = prev.find(i => i.item.id === item.id);
-      if (existing) {
-        return prev.map(i => i.item.id === item.id ? { ...i, quantity: i.quantity + 1 } : i);
-      }
-      return [...prev, { item, quantity: 1 }];
-    });
-  };
+  const cart = useCart(items);
+  const totals = useMemo(() => computeTotals(cart.lines, commerce, "delivery"), [cart.lines, commerce]);
 
-  const updateQuantity = (id: number, delta: number) => {
-    setCart(prev => prev.map(i => {
-      if (i.item.id === id) {
-        const newQty = i.quantity + delta;
-        return newQty > 0 ? { ...i, quantity: newQty } : null;
-      }
-      return i;
-    }).filter(Boolean) as typeof cart);
-  };
+  const visibleCategories = useMemo(() => categories.filter((category) => category.visible), [categories]);
+  const nameOf = (value: { name: string; nameEn?: string }) => pick(lang, value.name, value.nameEn);
 
-  const totalAmount = cart.reduce((sum, i) => sum + (i.item.price * i.quantity), 0);
+  const searched = useMemo(() => {
+    const term = query.trim().toLowerCase();
+    if (!term) return items;
+    return items.filter((item) =>
+      [item.name, item.nameEn, item.description, item.descriptionEn]
+        .filter(Boolean)
+        .some((text) => String(text).toLowerCase().includes(term)),
+    );
+  }, [items, query]);
+  const featured = useMemo(
+    () => (commerce.enableFeatured && activeCategory === ALL && !query ? items.filter((item) => item.bestseller && item.available) : []),
+    [commerce.enableFeatured, activeCategory, query, items],
+  );
 
-  const sendOrderViaWhatsApp = () => {
-    if (!customerName || !customerAddress) {
-      alert("برجاء إدخال الاسم والعنوان أولاً");
-      return;
+  const sections = useMemo(() => {
+    const pool = searched.filter((item) => item.available || query);
+    if (activeCategory !== ALL) {
+      const category = categories.find((c) => c.id === activeCategory);
+      return category ? [{ category, items: pool.filter((item) => item.categoryId === category.id) }] : [];
     }
+    return visibleCategories
+      .map((category) => ({ category, items: pool.filter((item) => item.categoryId === category.id) }))
+      .filter((section) => section.items.length > 0);
+  }, [searched, activeCategory, categories, visibleCategories, query]);
 
-    confetti({ particleCount: 100, spread: 70, origin: { y: 0.6 } });
-
-    let message = `*طلب جديد من المطعم:* 🍔\n\n`;
-    message += `👤 *العميل:* ${customerName}\n`;
-    message += `📍 *العنوان:* ${customerAddress}\n\n`;
-    message += `*تفاصيل الطلب:*\n`;
-    cart.forEach(i => {
-      message += `- ${i.quantity}x ${i.item.name} (${i.item.price * i.quantity} ج.م)\n`;
-    });
-    message += `\n💰 *الإجمالي الكلي:* ${totalAmount} ج.م`;
-
-    // رقم التيست للمطعم
-    const whatsappUrl = `https://wa.me/201000000000?text=${encodeURIComponent(message)}`;
-    window.open(whatsappUrl, "_blank");
-  };
+  const isEmpty = sections.every((section) => section.items.length === 0);
 
   return (
-    <div className="min-h-screen bg-neutral-900 text-neutral-100 font-sans pb-24" dir="rtl">
-      {/* Header */}
-      <header className="sticky top-0 z-40 bg-neutral-900/90 backdrop-blur-md border-b border-neutral-800 px-4 py-4 flex justify-between items-center max-w-4xl mx-auto">
-        <div className="flex items-center gap-2">
-          <div className="bg-amber-500 p-2 rounded-xl text-neutral-950 font-bold">
-            <Utensils className="w-6 h-6" />
-          </div>
-          <div>
-            <h1 className="font-bold text-lg leading-tight">مطعم البرجر الملكي</h1>
-            <p className="text-xs text-neutral-400">أسرع ديليفري وأعلى جودة</p>
+    <div className="min-h-screen bg-bg pb-28 text-ink" dir={en ? "ltr" : "rtl"}>
+      {/* شريط الإعلان */}
+      {brand.announcementEnabled && brand.announcementText.trim() ? (
+        <div className="overflow-hidden border-b border-accent/25 bg-accent text-accent-contrast">
+          <div className="marquee-track flex w-max gap-10 py-2 text-xs font-black">
+            {Array.from({ length: 4 }).map((_, index) => (
+              <span key={index} className="whitespace-nowrap">
+                {brand.announcementText}
+              </span>
+            ))}
           </div>
         </div>
+      ) : null}
 
-        <button 
-          onClick={() => setIsCartOpen(true)}
-          className="relative bg-neutral-800 border border-neutral-700 p-2.5 rounded-full hover:bg-neutral-700 transition"
-        >
-          <ShoppingBag className="w-6 h-6 text-amber-400" />
-          {cart.length > 0 && (
-            <span className="absolute -top-1 -right-1 bg-amber-500 text-neutral-950 text-xs font-bold w-5 h-5 rounded-full flex items-center justify-center">
-              {cart.reduce((sum, i) => sum + i.quantity, 0)}
+      {/* الهيدر */}
+      <header className="sticky top-0 z-40 border-b border-line bg-bg/90 backdrop-blur-md">
+        <div className="mx-auto flex max-w-4xl items-center justify-between gap-3 px-4 py-3">
+          <div className="flex min-w-0 items-center gap-2.5">
+            {brand.logo ? (
+              <DishImage src={brand.logo} alt="" className="h-11 w-11 rounded-xl border border-line" />
+            ) : (
+              <span className="grid h-11 w-11 place-items-center rounded-xl bg-accent text-accent-contrast">
+                <Utensils className="h-5 w-5" />
+              </span>
+            )}
+            <div className="min-w-0">
+              <h1 className="truncate text-base font-black leading-tight">
+                {pick(lang, brand.restaurantName, brand.restaurantNameEn)}
+              </h1>
+              <p className="truncate text-[11px] text-muted">{pick(lang, brand.tagline, brand.taglineEn)}</p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <span
+              className={cx(
+                "hidden items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-bold sm:inline-flex",
+                contact.isOpen ? "bg-emerald-500/12 text-emerald-400" : "bg-red-500/12 text-red-400",
+              )}
+            >
+              <span className={cx("h-1.5 w-1.5 rounded-full", contact.isOpen ? "bg-emerald-400" : "bg-red-400")} />
+              {contact.isOpen ? (en ? "Open now" : "مفتوح الآن") : en ? "Closed" : "مقفل"}
             </span>
-          )}
-        </button>
+            <a
+              href="/admin"
+              title={en ? "Admin panel" : "لوحة التحكم"}
+              className="hidden h-9 w-9 place-items-center rounded-full border border-line text-muted transition hover:text-accent sm:grid"
+            >
+              <Settings2 className="h-4 w-4" />
+            </a>
+            <button
+              type="button"
+              onClick={() => setCartOpen(true)}
+              className="relative grid h-9 w-9 place-items-center rounded-full border border-line bg-surface text-accent transition hover:border-accent/60"
+              aria-label={en ? "Open cart" : "فتح السلة"}
+            >
+              <ShoppingBag className="h-4.5 w-4.5" />
+              {totals.itemCount > 0 ? (
+                <span className="absolute -end-1 -top-1 grid h-4.5 min-w-4.5 place-items-center rounded-full bg-accent px-1 text-[10px] font-black text-accent-contrast">
+                  {totals.itemCount}
+                </span>
+              ) : null}
+            </button>
+          </div>
+        </div>
       </header>
 
-      {/* Main Content */}
-      <main className="max-w-4xl mx-auto px-4 mt-6">
-        {/* Categories Bar */}
-        <div className="flex gap-2 overflow-x-auto pb-4 scrollbar-none">
-          {CATEGORIES.map(cat => (
-            <button
-              key={cat}
-              onClick={() => setSelectedCategory(cat)}
-              className={`px-5 py-2 rounded-full text-sm font-semibold whitespace-nowrap transition ${
-                selectedCategory === cat 
-                  ? "bg-amber-500 text-neutral-950 shadow-lg shadow-amber-500/20" 
-                  : "bg-neutral-800 text-neutral-400 hover:bg-neutral-700"
-              }`}
-            >
-              {cat}
-            </button>
-          ))}
-        </div>
-
-        {/* Menu Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
-          {filteredItems.map(item => (
-            <div key={item.id} className="bg-neutral-800/50 border border-neutral-800 rounded-2xl p-3 flex gap-4 hover:border-neutral-700 transition">
-              <img 
-                src={item.image} 
-                alt={item.name} 
-                className="w-28 h-28 object-cover rounded-xl shrink-0"
-              />
-              <div className="flex flex-col justify-between flex-grow">
-                <div>
-                  <h3 className="font-bold text-neutral-100 text-base">{item.name}</h3>
-                  <p className="text-xs text-neutral-400 mt-1 line-clamp-2">{item.description}</p>
-                </div>
-                <div className="flex justify-between items-center mt-3">
-                  <span className="font-bold text-amber-400 text-lg">{item.price} <span className="text-xs font-normal">ج.م</span></span>
-                  <button
-                    onClick={() => addToCart(item)}
-                    className="bg-amber-500/10 hover:bg-amber-500 text-amber-400 hover:text-neutral-950 border border-amber-500/30 font-semibold text-xs px-3 py-1.5 rounded-lg flex items-center gap-1 transition"
-                  >
-                    <Plus className="w-4 h-4" /> إضافة
-                  </button>
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
-      </main>
-
-      {/* Cart Drawer / Modal */}
-      {isCartOpen && (
-        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex justify-end">
-          <div className="bg-neutral-900 w-full max-w-md h-full flex flex-col p-6 border-r border-neutral-800 animate-in slide-in-from-left duration-200">
-            <div className="flex justify-between items-center pb-4 border-b border-neutral-800">
-              <h2 className="font-bold text-lg flex items-center gap-2">
-                <ShoppingBag className="text-amber-500" /> سلة الطلبات ({cart.length})
+      <main className="mx-auto max-w-4xl px-4">
+        {/* الهيرو */}
+        {brand.showHero ? (
+          <section className="relative mt-5 overflow-hidden rounded-xl2 border border-line">
+            <DishImage src={brand.heroImage} alt="" className="absolute inset-0 h-full w-full" />
+            <div className="relative bg-[linear-gradient(100deg,rgba(0,0,0,.86),rgba(0,0,0,.35))] p-6 sm:p-8">
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-accent/15 px-2.5 py-1 text-[11px] font-black text-accent">
+                <Sparkles className="h-3 w-3" />
+                {pick(lang, brand.tagline, brand.taglineEn)}
+              </span>
+              <h2 className="mt-3 max-w-md text-2xl font-black leading-snug text-white sm:text-3xl">
+                {brand.heroTitle}
               </h2>
-              <button onClick={() => setIsCartOpen(false)} className="text-neutral-400 hover:text-white">إغلاق ✕</button>
-            </div>
-
-            {cart.length === 0 ? (
-              <div className="flex-1 flex flex-col items-center justify-center text-neutral-500">
-                <ShoppingBag className="w-16 h-16 mb-2 opacity-30" />
-                <p>السلة فارغة حالياً</p>
-              </div>
-            ) : (
-              <div className="flex-1 overflow-y-auto py-4 space-y-4">
-                {cart.map(({ item, quantity }) => (
-                  <div key={item.id} className="flex justify-between items-center bg-neutral-800/40 p-3 rounded-xl border border-neutral-800">
-                    <div>
-                      <h4 className="font-bold text-sm">{item.name}</h4>
-                      <span className="text-xs text-amber-400">{item.price * quantity} ج.م</span>
-                    </div>
-                    <div className="flex items-center gap-2 bg-neutral-900 border border-neutral-700 px-2 py-1 rounded-lg">
-                      <button onClick={() => updateQuantity(item.id, -1)} className="text-neutral-400 hover:text-red-400"><Minus className="w-3.5 h-3.5" /></button>
-                      <span className="text-xs font-bold px-1">{quantity}</span>
-                      <button onClick={() => updateQuantity(item.id, 1)} className="text-neutral-400 hover:text-green-400"><Plus className="w-3.5 h-3.5" /></button>
-                    </div>
-                  </div>
-                ))}
-
-                <div className="pt-4 border-t border-neutral-800 space-y-3">
-                  <input
-                    type="text"
-                    placeholder="الاسم بالكامل..."
-                    value={customerName}
-                    onChange={e => setCustomerName(e.target.value)}
-                    className="w-full bg-neutral-800 border border-neutral-700 rounded-xl p-3 text-sm focus:outline-none focus:border-amber-500"
-                  />
-                  <input
-                    type="text"
-                    placeholder="العنوان بالتفصيل ورقم الشقة..."
-                    value={customerAddress}
-                    onChange={e => setCustomerAddress(e.target.value)}
-                    className="w-full bg-neutral-800 border border-neutral-700 rounded-xl p-3 text-sm focus:outline-none focus:border-amber-500"
-                  />
-                </div>
-              </div>
-            )}
-
-            {cart.length > 0 && (
-              <div className="pt-4 border-t border-neutral-800">
-                <div className="flex justify-between text-base font-bold mb-4">
-                  <span>الإجمالي:</span>
-                  <span className="text-amber-400">{totalAmount} ج.م</span>
-                </div>
-                <button
-                  onClick={sendOrderViaWhatsApp}
-                  className="w-full bg-green-600 hover:bg-green-500 text-white font-bold py-3.5 rounded-xl flex items-center justify-center gap-2 shadow-lg shadow-green-600/20 transition"
+              <p className="mt-2 max-w-md text-xs leading-relaxed text-white/75 sm:text-sm">{brand.heroSubtitle}</p>
+              <div className="mt-4 flex flex-wrap items-center gap-2">
+                <a
+                  href="#menu"
+                  className="rounded-xl bg-accent px-4 py-2.5 text-xs font-black text-accent-contrast transition hover:brightness-110"
                 >
-                  <PhoneCall className="w-5 h-5" /> إرسال الطلب عبر واتساب
-                </button>
+                  {en ? "Browse the menu" : "تفرّج على الأكل 👀"}
+                </a>
+                <span className="inline-flex items-center gap-1.5 rounded-xl border border-white/20 px-3 py-2.5 text-[11px] font-bold text-white/80">
+                  <Clock className="h-3.5 w-3.5" /> {contact.openingHours}
+                </span>
               </div>
-            )}
+            </div>
+          </section>
+        ) : null}
+
+        {!contact.isOpen ? (
+          <div className="mt-4 flex items-center gap-2 rounded-card border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-xs font-bold text-amber-400">
+            <Store className="h-4 w-4" /> {contact.closedMessage}
+          </div>
+        ) : null}
+
+        {/* البحث + الأقسام */}
+        <div id="menu" className="sticky top-[68px] z-30 -mx-4 mt-5 bg-bg/92 px-4 py-3 backdrop-blur-md">
+          {commerce.enableSearch ? (
+            <div className="mb-2.5 flex items-center gap-2 rounded-xl border border-line bg-surface px-3.5 py-2.5 focus-within:border-accent">
+              <Search className="h-4 w-4 shrink-0 text-muted" />
+              <input
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder={en ? "Search for a dish…" : "دوّر على أي صنف… بيتزا، برجر، عصير"}
+                className="w-full bg-transparent text-sm outline-none placeholder:text-muted/70"
+              />
+              {query ? (
+                <button onClick={() => setQuery("")} className="text-[11px] font-bold text-muted hover:text-ink">
+                  ✕
+                </button>
+              ) : null}
+            </div>
+          ) : null}
+
+          <div className="no-scrollbar flex gap-2 overflow-x-auto pb-1">
+            <CategoryChip
+              active={activeCategory === ALL}
+              onClick={() => setActiveCategory(ALL)}
+              label={en ? "All" : "الكل"}
+              emoji="🍽️"
+            />
+            {visibleCategories.map((category) => (
+              <CategoryChip
+                key={category.id}
+                active={activeCategory === category.id}
+                onClick={() => setActiveCategory(category.id)}
+                label={nameOf(category)}
+                emoji={category.emoji}
+              />
+            ))}
           </div>
         </div>
-      )}
+
+        {/* الأكثر طلباً */}
+        {featured.length > 0 ? (
+          <section className="mt-3">
+            <h3 className="mb-2 text-sm font-black text-accent">{commerce.featuredLabel}</h3>
+            <div className="no-scrollbar -mx-4 flex snap-x gap-3 overflow-x-auto px-4 pb-1">
+              {featured.slice(0, 8).map((item) => (
+                <button
+                  key={item.id}
+                  onClick={() => cart.add(item.id)}
+                  className="w-40 shrink-0 snap-start overflow-hidden rounded-card border border-line bg-surface text-start transition hover:border-accent/50"
+                >
+                  <DishImage src={item.image} alt={nameOf(item)} className="h-24 w-full" />
+                  <div className="p-2.5">
+                    <p className="truncate text-xs font-bold">{nameOf(item)}</p>
+                    <p className="mt-1 text-[11px] font-black text-accent">
+                      {formatPrice(item.price, lang, commerce)}
+                    </p>
+                  </div>
+                </button>
+              ))}
+            </div>
+          </section>
+        ) : null}
+
+        {/* شبكة الأصناف */}
+        <div className="mt-5 space-y-7">
+          {sections.map((section) => (
+            <section key={section.category?.id ?? "none"}>
+              <div className="mb-3 flex items-center justify-between">
+                <h3 className="flex items-center gap-2 text-base font-black">
+                  <span aria-hidden>{section.category?.emoji}</span>
+                  {section.category ? nameOf(section.category) : en ? "Menu" : "القائمة"}
+                  <span className="rounded-full bg-surface-2 px-2 py-0.5 text-[10px] font-bold text-muted">
+                    {section.items.length}
+                  </span>
+                </h3>
+                {activeCategory === ALL ? (
+                  <button
+                    onClick={() => setActiveCategory(section.category!.id)}
+                    className="flex items-center gap-0.5 text-[11px] font-bold text-muted transition hover:text-accent"
+                  >
+                    {en ? "See all" : "عرض الكل"}
+                    <ChevronLeft className={cx("h-3.5 w-3.5", en && "rotate-180")} />
+                  </button>
+                ) : null}
+              </div>
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                {section.items.map((item) => (
+                  <DishCard
+                    key={item.id}
+                    item={item}
+                    lang={lang}
+                    commerce={commerce}
+                    quantity={cart.quantityOf(item.id)}
+                    onAdd={() => cart.add(item.id)}
+                    onRemoveOne={() => cart.setQuantity(item.id, cart.quantityOf(item.id) - 1)}
+                    disabled={!contact.isOpen || !commerce.enableCart}
+                  />
+                ))}
+              </div>
+            </section>
+          ))}
+
+          {isEmpty ? (
+            <div className="rounded-xl2 border border-dashed border-line py-14 text-center">
+              <p className="text-sm font-black">{en ? "Nothing matches your search" : "مفيش حاجة يطابق البحث 🤷‍♂️"}</p>
+              <p className="mt-1 text-xs text-muted">
+                {en ? "Try another word or pick another category" : "جرّب كلمة تانية أو اختار قسم تاني"}
+              </p>
+            </div>
+          ) : null}
+        </div>
+
+        {/* الفوتر */}
+        <footer className="mt-10 rounded-xl2 border border-line bg-surface p-5">
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div>
+              <h4 className="text-sm font-black">{pick(lang, brand.restaurantName, brand.restaurantNameEn)}</h4>
+              <p className="mt-1.5 text-xs leading-relaxed text-muted">{contact.footerNote}</p>
+            </div>
+            <div className="space-y-1.5 text-xs text-muted">
+              <p className="flex items-start gap-2">
+                <Clock className="mt-0.5 h-3.5 w-3.5 shrink-0 text-accent" /> {contact.openingHours}
+              </p>
+              {contact.address ? (
+                <a href={contact.mapUrl || undefined} target="_blank" rel="noopener" className="flex items-start gap-2 transition hover:text-accent">
+                  <MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0 text-accent" /> {contact.address}
+                </a>
+              ) : null}
+              {contact.phone ? (
+                <a href={`tel:${contact.phone.replace(/\s/g, "")}`} className="flex items-start gap-2 transition hover:text-accent">
+                  <Phone className="mt-0.5 h-3.5 w-3.5 shrink-0 text-accent" /> {contact.phone}
+                </a>
+              ) : null}
+              {contact.instagram || contact.facebook ? (
+                <p className="flex flex-wrap gap-2 pt-1">
+                  {contact.instagram ? (
+                    <a href={contact.instagram} target="_blank" rel="noopener" className="rounded-lg border border-line px-2.5 py-1 font-bold transition hover:border-accent hover:text-accent">
+                      Instagram
+                    </a>
+                  ) : null}
+                  {contact.facebook ? (
+                    <a href={contact.facebook} target="_blank" rel="noopener" className="rounded-lg border border-line px-2.5 py-1 font-bold transition hover:border-accent hover:text-accent">
+                      Facebook
+                    </a>
+                  ) : null}
+                </p>
+              ) : null}
+            </div>
+          </div>
+          <div className="mt-4 flex items-center justify-between border-t border-line pt-3 text-[11px] text-muted">
+            <span>
+              © {new Date().getFullYear()} — {pick(lang, brand.restaurantName, brand.restaurantNameEn)}
+            </span>
+            <a href="/admin" className="inline-flex items-center gap-1 font-bold transition hover:text-accent">
+              <Settings2 className="h-3 w-3" /> {en ? "Admin" : "لوحة التحكم"}
+            </a>
+          </div>
+        </footer>
+      </main>
+
+      {/* شريط السلة العائم */}
+      {commerce.enableCart && totals.itemCount > 0 ? (
+        <button
+          type="button"
+          onClick={() => setCartOpen(true)}
+          className="fixed inset-x-4 bottom-4 z-40 mx-auto flex max-w-md items-center justify-between gap-3 rounded-card bg-accent px-4 py-3 text-accent-contrast shadow-[0_18px_45px_-18px_var(--accent)] transition hover:brightness-110 active:scale-[.99]"
+        >
+          <span className="flex items-center gap-2 text-xs font-black">
+            <ShoppingBag className="h-4 w-4" />
+            {totals.itemCount} {en ? "items" : "صنف"}
+          </span>
+          <span className="text-sm font-black">
+            {formatPrice(totals.subtotal, lang, commerce)} {en ? "→ Review order" : "— راجع الطلب ←"}
+          </span>
+        </button>
+      ) : null}
+
+      <CartSheet
+        open={cartOpen}
+        onClose={() => setCartOpen(false)}
+        lines={cart.lines}
+        setQuantity={cart.setQuantity}
+        remove={cart.remove}
+        clear={cart.clear}
+      />
     </div>
+  );
+}
+
+function CategoryChip({
+  active,
+  onClick,
+  label,
+  emoji,
+}: {
+  active: boolean;
+  onClick: () => void;
+  label: string;
+  emoji?: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cx(
+        "inline-flex shrink-0 items-center gap-1.5 rounded-full border px-4 py-2 text-xs font-bold whitespace-nowrap transition",
+        active
+          ? "border-accent bg-accent text-accent-contrast shadow-[0_10px_24px_-14px_var(--accent)]"
+          : "border-line bg-surface text-muted hover:border-accent/50 hover:text-ink",
+      )}
+    >
+      {emoji ? <span aria-hidden>{emoji}</span> : null}
+      {label}
+    </button>
   );
 }
