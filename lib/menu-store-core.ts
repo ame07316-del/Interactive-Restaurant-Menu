@@ -1,6 +1,5 @@
 import { DEFAULT_DATA, STORAGE_KEY } from "./defaults";
 import {
-  broadcastUpdate,
   clearData,
   loadData,
   normalizeData,
@@ -8,13 +7,54 @@ import {
   storageFootprint,
   subscribeToUpdates,
 } from "./storage";
+import { DRAFT_SLUG, PUBLISHED_SLUG, isSupabaseConfigured } from "./supabase";
+import { canWriteToCloud, getAuthSnapshot, subscribeAuth } from "./supabase-auth-core";
+import {
+  fetchMenuRow,
+  publishMenu,
+  saveDraftMenu,
+  subscribeMenuChanges,
+  type RemoteSnapshot,
+} from "./supabase-menu";
 import type { Category, MenuData, MenuItem } from "./types";
 
 /**
- * مخزن البيانات بدون React: مصدر حقيقة واحد هو localStorage.
- * القراءة عن طريق useSyncExternalStore في lib/use-menu.tsx
+ * مخزن البيانات بدون React.
+ *
+ * مصدر الحقيقة:
+ *   - Supabase (جدول public.menu_data) لو متغيرات البيئة موجودة → النشر بيوصل لكل العملاء لحظياً.
+ *   - localStorage دايماً كـ cache + fallback (الموقع بيشتغل ١٠٠٪ من غير Supabase).
+ *
+ * الصفوف:
+ *   slug='main'  → النسخة المنشورة اللي بيشوفها العملاء (is_published = true)
+ *   slug='draft' → المسودة، مقروءة للمسجّلين دخول بس (is_published = false)
+ *
+ * القراءة من React عن طريق useSyncExternalStore في lib/use-menu.tsx
  */
 export type SaveState = "idle" | "dirty" | "saved" | "error";
+
+/** حالة المزامنة مع السحابة */
+export type CloudStatus =
+  | "off" // مفيش Supabase — localStorage بس
+  | "connecting" // بنجيب البيانات
+  | "live" // متزامن
+  | "syncing" // بيرفع مسودة
+  | "publishing" // بينشر
+  | "error"; // فشل — فيه زر إعادة محاولة
+
+export interface CloudState {
+  enabled: boolean;
+  authed: boolean;
+  email: string | null;
+  status: CloudStatus;
+  error: string | null;
+  /** آخر تحديث للنسخة المنشورة */
+  publishedAt: string | null;
+  /** آخر تحديث للمسودة */
+  draftAt: string | null;
+  /** فيه تعديلات في المسودة لسه متنشرتش */
+  hasUnpublished: boolean;
+}
 
 export interface MenuState {
   data: MenuData;
@@ -22,7 +62,19 @@ export interface MenuState {
   isCustomized: boolean;
   saveState: SaveState;
   storageKb: number;
+  cloud: CloudState;
 }
+
+const OFFLINE_CLOUD: CloudState = {
+  enabled: false,
+  authed: false,
+  email: null,
+  status: "off",
+  error: null,
+  publishedAt: null,
+  draftAt: null,
+  hasUnpublished: false,
+};
 
 /** لقطة ثابتة بتستخدم وقت الـ SSR — لازم تفضل نفس الـ reference */
 export const MENU_SERVER_STATE: MenuState = {
@@ -31,6 +83,7 @@ export const MENU_SERVER_STATE: MenuState = {
   isCustomized: false,
   saveState: "idle",
   storageKb: 0,
+  cloud: OFFLINE_CLOUD,
 };
 
 let state: MenuState = MENU_SERVER_STATE;
@@ -38,6 +91,13 @@ const listeners = new Set<() => void>();
 let initialized = false;
 let persistTimer: number | undefined;
 let resetTimer: number | undefined;
+let cloudTimer: number | undefined;
+let pendingCloudPush = false;
+let lastKnownUserId: string | null = null;
+let seeded = false;
+/** آخر عملية سحابية فشلت — عشان زر «إعادة المحاولة» */
+let lastFailedAction: "draft" | "publish" | "pull" | null = null;
+let lastPullAt = 0;
 
 const canUseDOM = () => typeof window !== "undefined";
 
@@ -50,34 +110,249 @@ function set(patch: Partial<MenuState>) {
   emit();
 }
 
+function setCloud(patch: Partial<CloudState>) {
+  state = { ...state, cloud: { ...state.cloud, ...patch } };
+  emit();
+}
+
 function flushPersist() {
   if (!canUseDOM() || persistTimer === undefined) return;
   window.clearTimeout(persistTimer);
   persistTimer = undefined;
-  const ok = saveData(state.data);
-  if (ok) broadcastUpdate();
+  saveData(state.data);
 }
+
+/* ------------------------------------------------------------ init */
 
 function ensureInit() {
   if (initialized || !canUseDOM()) return;
   initialized = true;
+
   // لو التبويب اتقفل أو اتخفى أثناء الكتابة، نفضّي التعديلات المعلقة
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "hidden") flushPersist();
   });
   window.addEventListener("pagehide", flushPersist);
+
   const raw = window.localStorage.getItem(STORAGE_KEY);
   set({
     data: loadData(),
     ready: true,
     isCustomized: raw !== null,
     storageKb: storageFootprint(),
+    cloud: { ...OFFLINE_CLOUD, enabled: isSupabaseConfigured() },
   });
+
+  // تحديث جاي من تبويب تاني في نفس المتصفح (حدث storage)
   subscribeToUpdates(() => {
-    // تحديث جاي من تبويب تاني
     set({ data: loadData(), isCustomized: true, storageKb: storageFootprint() });
   });
+
+  if (!isSupabaseConfigured()) return;
+
+  setCloud({ status: "connecting" });
+
+  // أي تغيّر في حالة الدخول → نعيد المزامنة (المسودة بتبان للأدمن بس)
+  subscribeAuth(() => {
+    const auth = getAuthSnapshot();
+    if (!auth.checked) return;
+    const changed = auth.userId !== lastKnownUserId;
+    lastKnownUserId = auth.userId;
+    setCloud({ authed: Boolean(auth.userId), email: auth.email });
+    if (changed) {
+      seeded = false;
+      void pullRemote();
+    }
+  });
+
+  // realtime: أي نشر من الأدمن يوصل لكل المتصفحات المفتوحة
+  subscribeMenuChanges((slug) => {
+    if (slug !== PUBLISHED_SLUG && slug !== DRAFT_SLUG) return;
+    // لو إحنا نفسنا بنكتب دلوقتي بنستنى لما الكتابة تخلص
+    if (pendingCloudPush || state.saveState === "dirty") return;
+    void pullRemote();
+  });
+
+  void pullRemote();
+
+  // رجوع النت / فتح التبويب تاني → مزامنة جديدة
+  window.addEventListener("online", () => void pullRemote());
+  document.addEventListener("visibilitychange", () => {
+    // رجوع للتبويب → مزامنة (مرة كل ١٥ ثانية بحد أقصى)
+    if (document.visibilityState !== "visible" || pendingCloudPush) return;
+    if (Date.now() - lastPullAt < 15_000) return;
+    void pullRemote();
+  });
 }
+
+/* ------------------------------------------------------- cloud read */
+
+function applySnapshot(snapshot: RemoteSnapshot) {
+  // نفس البيانات؟ منعملش re-render ولا نكتب على القرص
+  if (JSON.stringify(snapshot.data) === JSON.stringify(state.data)) return;
+  const ok = saveData(snapshot.data);
+  set({
+    data: snapshot.data,
+    isCustomized: true,
+    storageKb: storageFootprint(),
+    saveState: ok ? state.saveState : "error",
+  });
+}
+
+/** قراءة الصفوف من Supabase وتحديث الكاش المحلي */
+async function pullRemote(): Promise<void> {
+  if (!isSupabaseConfigured() || !canUseDOM()) return;
+  const authed = canWriteToCloud();
+  lastPullAt = Date.now();
+  // «جاري الاتصال…» بتبان بس لو لسه مفيش مزامنة ناجحة — عشان الشارة متطقطقش كل مرة
+  if (state.cloud.status === "off" || state.cloud.status === "error") {
+    setCloud({ status: "connecting" });
+  }
+
+  const [published, draft] = await Promise.all([
+    fetchMenuRow(PUBLISHED_SLUG),
+    authed ? fetchMenuRow(DRAFT_SLUG) : Promise.resolve({ ok: true, value: null } as const),
+  ]);
+
+  if (!published.ok) {
+    lastFailedAction = "pull";
+    // بنفضل شغالين بالكاش المحلي — من غير أي error في الكونسول
+    setCloud({ status: "error", error: published.error ?? "تعذّرت القراءة من السحابة" });
+    return;
+  }
+
+  let publishedRow = published.value ?? null;
+
+  // أول مرة: الصف فاضي ({"version":1}) → نملاه من البيانات الافتراضية
+  if (authed && !seeded && (!publishedRow || !publishedRow.complete)) {
+    seeded = true;
+    const seed = state.isCustomized ? state.data : DEFAULT_DATA;
+    const result = await publishMenu(seed);
+    if (result.ok) {
+      publishedRow = {
+        slug: PUBLISHED_SLUG,
+        data: seed,
+        isPublished: true,
+        updatedAt: result.value ?? new Date().toISOString(),
+        complete: true,
+      };
+    } else {
+      lastFailedAction = "publish";
+      setCloud({ status: "error", error: result.error ?? "تعذّر تجهيز البيانات الأولية" });
+      return;
+    }
+  }
+
+  const draftRow = draft.ok ? (draft.value ?? null) : null;
+  const draftIsNewer =
+    Boolean(draftRow?.complete) &&
+    (!publishedRow || (draftRow as RemoteSnapshot).updatedAt > publishedRow.updatedAt);
+
+  // الأدمن بيشوف المسودة لو هي الأحدث، والعميل بيشوف المنشور دايماً
+  const chosen = authed && draftIsNewer ? draftRow : publishedRow;
+
+  if (chosen?.complete && !pendingCloudPush && state.saveState !== "dirty") {
+    applySnapshot(chosen);
+  }
+
+  lastFailedAction = null;
+  setCloud({
+    status: "live",
+    error: null,
+    publishedAt: publishedRow?.updatedAt ?? null,
+    draftAt: draftRow?.updatedAt ?? null,
+    hasUnpublished: draftIsNewer,
+  });
+}
+
+/* ------------------------------------------------------ cloud write */
+
+/** رفع المسودة (تلقائي بعد أي تعديل، أو يدوي من زر «حفظ كمسودة») */
+async function pushDraft(): Promise<boolean> {
+  if (!canWriteToCloud()) return false;
+  pendingCloudPush = true;
+  setCloud({ status: "syncing", error: null });
+  const snapshot = state.data;
+  const result = await saveDraftMenu(snapshot);
+  pendingCloudPush = false;
+  if (!result.ok) {
+    lastFailedAction = "draft";
+    setCloud({ status: "error", error: result.error ?? "فشل رفع المسودة" });
+    return false;
+  }
+  lastFailedAction = null;
+  setCloud({
+    status: "live",
+    error: null,
+    draftAt: result.value ?? new Date().toISOString(),
+    hasUnpublished: true,
+  });
+  return true;
+}
+
+function scheduleCloudPush() {
+  if (!canUseDOM() || !canWriteToCloud()) return;
+  window.clearTimeout(cloudTimer);
+  cloudTimer = window.setTimeout(() => void pushDraft(), 900);
+}
+
+/** حفظ كمسودة فوراً — العميل بيفضل شايف آخر نسخة منشورة */
+export async function saveDraftNow(): Promise<boolean> {
+  if (canUseDOM()) window.clearTimeout(cloudTimer);
+  flushPersist();
+  if (!canWriteToCloud()) return false;
+  return pushDraft();
+}
+
+/** حفظ ونشر — بيتحدّث صف main فوراً وكل العملاء بيشوفوه في نفس الثانية */
+export async function publishNow(): Promise<boolean> {
+  if (canUseDOM()) window.clearTimeout(cloudTimer);
+  flushPersist();
+  if (!canWriteToCloud()) return false;
+
+  pendingCloudPush = true;
+  setCloud({ status: "publishing", error: null });
+  const snapshot = state.data;
+  const result = await publishMenu(snapshot);
+  if (!result.ok) {
+    pendingCloudPush = false;
+    lastFailedAction = "publish";
+    setCloud({ status: "error", error: result.error ?? "فشل النشر" });
+    return false;
+  }
+  // نخلي المسودة مطابقة للمنشور عشان متفضلش "أحدث" بالغلط
+  const draftResult = await saveDraftMenu(snapshot);
+  pendingCloudPush = false;
+  lastFailedAction = null;
+  setCloud({
+    status: "live",
+    error: null,
+    publishedAt: result.value ?? new Date().toISOString(),
+    draftAt: draftResult.value ?? result.value ?? new Date().toISOString(),
+    hasUnpublished: false,
+  });
+  return true;
+}
+
+/** إعادة محاولة آخر عملية فشلت */
+export async function retryCloud(): Promise<boolean> {
+  switch (lastFailedAction) {
+    case "publish":
+      return publishNow();
+    case "draft":
+      return saveDraftNow();
+    default:
+      await pullRemote();
+      return state.cloud.status === "live";
+  }
+}
+
+/** إعادة تحميل يدوي من السحابة */
+export async function refreshFromCloud(): Promise<void> {
+  await pullRemote();
+}
+
+/* --------------------------------------------------- store plumbing */
 
 export function subscribeMenu(listener: () => void): () => void {
   listeners.add(listener);
@@ -105,6 +380,7 @@ function commit(next: MenuData) {
   const stamped: MenuData = { ...next, updatedAt: new Date().toISOString() };
   set({ data: stamped, saveState: "dirty" });
   schedulePersist(stamped);
+  scheduleCloudPush();
 }
 
 /** الكتابة على القرص بتتأجل شوية عشان الطباعة على الكيبورد تفضل خفيفة */
@@ -118,7 +394,6 @@ function schedulePersist(value: MenuData) {
       storageKb: storageFootprint(),
       ...(ok ? { isCustomized: true } : {}),
     });
-    if (ok) broadcastUpdate();
     window.clearTimeout(resetTimer);
     resetTimer = window.setTimeout(() => {
       if (state.saveState === "saved") set({ saveState: "idle" });
@@ -275,5 +550,6 @@ export function importJson(text: string): { ok: boolean; error?: string } {
 export function resetToDefaults() {
   clearData();
   set({ data: DEFAULT_DATA, isCustomized: false, storageKb: 0, saveState: "idle" });
-  broadcastUpdate();
+  // الرجوع للافتراضي محلي — عشان يبقى منشور لازم تضغط «حفظ ونشر»
+  scheduleCloudPush();
 }

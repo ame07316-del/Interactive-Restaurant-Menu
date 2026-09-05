@@ -3,6 +3,8 @@
 import { useRef, useState } from "react";
 import {
   Braces,
+  Cloud,
+  CloudUpload,
   Copy,
   Database,
   Download,
@@ -11,14 +13,30 @@ import {
   Lock,
   QrCode,
   RefreshCw,
+  Save,
+  Send,
   Trash2,
   Upload,
 } from "lucide-react";
 import { useMenu } from "@/lib/use-menu";
 import { Button, Field, Panel, Toast, TextInput, Toggle, useToast } from "@/components/ui";
+import { CloudChip, relativeTime } from "./cloud-bar";
 
 export function DataPanel() {
-  const { data, patchAdmin, exportJson, importJson, resetToDefaults, storageKb, isCustomized } = useMenu();
+  const {
+    data,
+    patchAdmin,
+    exportJson,
+    importJson,
+    resetToDefaults,
+    storageKb,
+    isCustomized,
+    cloud,
+    publishNow,
+    saveDraftNow,
+    retryCloud,
+    refreshFromCloud,
+  } = useMenu();
   const admin = data.admin;
   const fileRef = useRef<HTMLInputElement>(null);
   const [paste, setPaste] = useState("");
@@ -59,11 +77,91 @@ export function DataPanel() {
     if (fileRef.current) fileRef.current.value = "";
   };
 
+  const cloudAction = async (fn: () => Promise<boolean>, okMessage: string) => {
+    const ok = await fn();
+    show(ok ? okMessage : (cloud.error ?? "فشل الاتصال بالسحابة"), ok ? "success" : "error");
+  };
+
   return (
     <div className="space-y-4">
       <Panel
-        title="نشر التعديلات لكل العملاء"
-        description="من غير باك إند: التعديلات بتتحفظ في المتصفح بتاعك — والخطوة دي تنقلها للكود نفسه"
+        title="النشر السحابي (Supabase)"
+        description="التعديلات بتوصل لكل العملاء المفتوحين في نفس الثانية عن طريق Realtime"
+        icon={<Cloud className="h-4 w-4" />}
+      >
+        {cloud.enabled ? (
+          <div className="space-y-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <CloudChip cloud={cloud} />
+              {cloud.authed ? (
+                <span className="text-[11px] font-bold text-muted">{cloud.email}</span>
+              ) : (
+                <span className="text-[11px] font-bold text-amber-400">
+                  مش مسجّل دخول — القراءة بس (RLS بيمنع الكتابة)
+                </span>
+              )}
+            </div>
+
+            <div className="grid gap-2 sm:grid-cols-2">
+              <div className="rounded-xl border border-line bg-surface-2/40 p-3">
+                <p className="text-[11px] font-black text-muted">آخر نسخة منشورة (العملاء)</p>
+                <p className="mt-0.5 text-xs font-bold">{relativeTime(cloud.publishedAt)}</p>
+              </div>
+              <div className="rounded-xl border border-line bg-surface-2/40 p-3">
+                <p className="text-[11px] font-black text-muted">آخر مسودة (انت بس)</p>
+                <p className="mt-0.5 text-xs font-bold">{relativeTime(cloud.draftAt)}</p>
+              </div>
+            </div>
+
+            {cloud.status === "error" && cloud.error ? (
+              <p className="flex items-center justify-between gap-2 rounded-xl border border-red-500/30 bg-red-500/10 p-2.5 text-[11px] font-bold text-red-300">
+                {cloud.error}
+                <Button size="sm" variant="outline" onClick={() => cloudAction(retryCloud, "المزامنة رجعت ✓")}>
+                  <RefreshCw className="h-3.5 w-3.5" /> إعادة المحاولة
+                </Button>
+              </p>
+            ) : null}
+
+            <div className="flex flex-wrap gap-2">
+              <Button
+                size="sm"
+                disabled={!cloud.authed}
+                onClick={() => cloudAction(publishNow, "اتنشر ✓ كل العملاء شايفين النسخة الجديدة")}
+              >
+                <Send className="h-3.5 w-3.5" /> حفظ ونشر
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={!cloud.authed}
+                onClick={() => cloudAction(saveDraftNow, "المسودة اتحفظت — العميل شايف آخر نسخة منشورة")}
+              >
+                <Save className="h-3.5 w-3.5" /> حفظ كمسودة
+              </Button>
+              <Button size="sm" variant="ghost" onClick={() => void refreshFromCloud()}>
+                <RefreshCw className="h-3.5 w-3.5" /> تحديث من السحابة
+              </Button>
+            </div>
+
+            <p className="flex gap-2 rounded-xl border border-line bg-surface-2/40 p-2.5 text-[11px] leading-relaxed text-muted">
+              <CloudUpload className="mt-0.5 h-3.5 w-3.5 shrink-0 text-accent" />
+              أي تعديل بيتحفظ أوتوماتيك كمسودة (is_published = false) والعميل بيفضل شايف آخر نسخة منشورة،
+              لحد ما تضغط «حفظ ونشر» فيتحدّث الصف slug=&quot;main&quot; وكل المتصفحات المفتوحة تتحدّث لحظياً.
+            </p>
+          </div>
+        ) : (
+          <p className="flex gap-2 rounded-xl border border-amber-500/25 bg-amber-500/8 p-2.5 text-[11px] leading-relaxed text-amber-300">
+            <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+            متغيرات <span className="font-mono">NEXT_PUBLIC_SUPABASE_URL</span> و{" "}
+            <span className="font-mono">NEXT_PUBLIC_SUPABASE_ANON_KEY</span> مش موجودة، فالموقع شغال بالكامل
+            من localStorage (وضع الديمو). ضيفهم في فيرسل بنوع Config عشان النشر اللحظي يشتغل.
+          </p>
+        )}
+      </Panel>
+
+      <Panel
+        title="نسخة احتياطية ونشر يدوي"
+        description="تصدير/استيراد JSON — مفيد للباك أب أو لو حبيت تخلي القائمة دي هي الافتراضية في الكود"
         icon={<Database className="h-4 w-4" />}
       >
         <ol className="space-y-2.5">
