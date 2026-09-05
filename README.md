@@ -1,42 +1,135 @@
-# 🍔 Smart Restaurant QR Menu & WhatsApp Ordering System
+# 🍔 قائمة المطعم الذكية + لوحة تحكم كاملة (بدون باك إند)
 
-A high-performance, mobile-first digital restaurant menu web application built with **Next.js 14 (App Router)**, **TypeScript**, and **Tailwind CSS**. It allows customers to browse categorized dishes, manage a dynamic shopping cart, and submit complete orders directly to the restaurant's WhatsApp with one click.
+قائمة إلكترونية للمطعم مبنية بـ **Next.js (App Router)** و **TypeScript** و **Tailwind CSS v4**، فيها سلة طلبات وإرسال مباشر على **واتساب**، وكمان **لوحة تحكم `/admin`** تتحكم في كل حاجة في الموقع — **100% فروت إند، من غير أي سيرفر أو قاعدة بيانات**.
 
----
-
-## 🚀 Live Demo
-
-🔗 **[View Live Demo on Vercel](https://interactive-restaurant-menu-one.vercel.app/)** _(Replace with your actual link)_
+> 🔗 [لايف ديمو على فيرسل](https://interactive-restaurant-menu-one.vercel.app/) · لوحة التحكم: `/admin`
 
 ---
 
-## ✨ Key Features
+## ✨ المميزات
 
-- ⚡ **Ultra Fast Performance:** Built on Next.js 14 with Server-Side optimizations.
-- 📱 **Mobile-First UX:** Seamless, app-like ordering experience designed for mobile devices.
-- 🛍️ **Real-Time Cart System:** Instant item additions, quantity management, and dynamic total calculation.
-- 📲 **Instant WhatsApp Checkout:** Generates pre-formatted Arabic/English order summaries directly to the store owner's WhatsApp (No complex SMS gateways needed).
-- 🏷️ **Categorized Filtering:** Fast interactive category switcher (Burgers, Pizza, Appetizers, Drinks).
-- 🎉 **Engaging Micro-interactions:** Confetti animation on checkout to boost conversion.
-- 🎨 **Modern Dark UI:** Premium aesthetic styled with Tailwind CSS and Lucide Icons.
+### واجهة العميل
+- 📱 تصميم Mobile-First بخط عربي (Cairo) و RTL كامل، ووضع LTR إنجليزي لو حبيت.
+- 🛍️ سلة طلبات محفوظة في المتصفح (لو العميل قفل الصفحة ولقاها زي ما هي).
+- 🔎 بحث لحظي + تبويب أقسام + قسم «الأكثر طلباً».
+- 🏷️ شارات على كل صنف: الأكثر طلباً، جديد، درجة الحرافة، خصم بالنسبة المئوية، «خلصت».
+- 🧾 أنواع طلب: توصيل / استلام من الفرع / أكل في المطعم — بكل حقوله (عنوان، ترابيزة، ملاحظات).
+- 💵 حساب مصروف التوصيل، التوصيل المجاني بعد حد معين، خدمة بالنسبة المئوية، وحد أدنى للطلب.
+- 📲 إرسال الطلب على واتساب برسالة مفصّلة بتنسقها إنت بنفسك.
+- 🎉 كونفيتي بعد الطلب، وشريط إعلان متحرك، وحالة «مفتوح / مقفل».
+
+### لوحة التحكم `/admin`
+- 📊 **نظرة عامة**: إحصائيات سريعة + «صحة القائمة» (تكتشف رقم واتساب ناقص، صنف بدون صورة، قسم فاضي…).
+- 🏪 **الهوية**: اسم المطعم (عربي/إنجليزي)، التاجلاين، اللوجو، لغة الموقع، شريط الإعلان، قسم الـ Hero، الفوتر والسوشيال.
+- 🎨 **المظهر**: وضع ليلي/نهاري، لون البراند (10 ألوان جاهزة + Color Picker)، انحناء الحواف، اختيار الخط، وإظهار/إخفاء البحث والأسعار وقسم الأكثر طلباً والكونفيتي.
+- 📂 **الأقسام**: إضافة/تعديل/حذف/إعادة ترتيب، إيموجي لكل قسم، وإخفاء أي قسم من الموقع.
+- 🍽️ **الأصناف**: بحث وفلترة (خلصت / عروض / بدون صورة)، تعديل السعر بسرعة، تبديل حالة القسم كله بضغطة، محرر كامل للصنف مع **رفع صورة من الموبايل** (بتتضغط في المتصفح)، تكرار وحذف بإعادة تأكيد.
+- 🧾 **الطلب والأسعار**: رقم الواتساب، بيانات التواصل والمواعيد، العملة، مصروف التوصيل، الحد الأدنى، نسبة الخدمة، أنواع الطلب، الحقول المطلوبة، و**قالب رسالة واتساب** بمتغيّرات (`{name}`، `{items}`، `{total}`…) مع معاينة حيّة للرسالة.
+- 👁️ **معاينة**: آيفون/تابلت/ديسكتوب جوه اللوحة، بتتحدّث لايف مع كل ضغطة زر.
+- 🗄️ **البيانات والحماية**: تصدير/نسخ JSON، استيراد من ملف أو لصق، إعادة ضبط، كود QR لرابط القائمة، رقم سري للوحة، ومقياس لحجم التخزين المستخدم.
 
 ---
 
-## 🛠️ Tech Stack
+## 🧠 الفكرة المعمارية (إزاي شغّالة من غير باك إند)
 
-- **Framework:** Next.js 14 (App Router)
-- **Language:** TypeScript
-- **Styling:** Tailwind CSS
-- **Icons:** Lucide React
-- **Animations:** Canvas-Confetti
-- **Deployment:** Vercel
+```
+lib/defaults.ts        ← البيانات الافتراضية (المصدقة في الريبو)
+        ↓  (أول فتح)
+localStorage           ← royal-menu:data:v1  (كل تعديلات الأدمين هنا)
+        ↓
+lib/menu-store-core.ts ← مخزن صغير + حفظ debounced + مزامنة بين التابات (BroadcastChannel)
+        ↓
+useMenu()              ← useSyncExternalStore بيغذّي كل المكونات
+```
+
+- مفيش API route ولا داتابيز ولا أوث. أي تعديل من `/admin` بيتحفظ **في المتصفح ده** وبيظهر فوراً في كل تبويباته.
+- مفيش `flash of wrong theme`: سكربت صغير في الـ `<head>` بيقرأ `localStorage` قبل الرسم فيطبّق اللون والوضع والـ RTL.
+- الحماية برقم سري = قفل واجهة بس (من غير سيرفر مافيش أمان حقيقي). لأي حماية فعلية استخدم **Vercel Password Protection** أو **Cloudflare Access** على مسار `/admin`.
+
+### 🚀 إزاي أنشر تعديلاتي لكل العملاء؟
+1. من `/admin` ← تبويب **البيانات والحماية** ← **تنزيل JSON** (أو نسخ كـ TypeScript).
+2. استبدل الكائن `DEFAULT_DATA` في `lib/defaults.ts` بمحتوى الملف.
+3. `git commit && git push` → فيرسل هيعيد البناء، وكل العملاء هيفتحوا على القائمة الجديدة.
+
+> لو عايز تحديث لحظي لكل العملاء من غير Deploy، دي النقطة اللي تحتاج باك إند (مثلاً Firebase Realtime Database أو Supabase) — البنية الحالية جاهزة للتبديل: استبدل `lib/menu-store-core.ts` بمخزن بيسندها وقسّمها على نفس `useMenu()`.
 
 ---
 
-## 💻 Getting Started (Local Development)
+## 🛠️ التشغيل محلياً
 
-1. **Clone the repository:**
-   ```bash
-   git clone https://github.com/YOUR_USERNAME/food-menu.git
-   cd food-menu
-   ```
+```bash
+git clone https://github.com/ame07316-del/Interactive-Restaurant-Menu.git
+cd Interactive-Restaurant-Menu
+npm install
+npm run dev        # http://localhost:3000  — ولوحة التحكم http://localhost:3000/admin
+```
+
+| الأمر | الوظيفة |
+| --- | --- |
+| `npm run dev` | سيرفر تطوير على 0.0.0.0:3000 |
+| `npm run build` | بناء الإنتاج (Static — كل الصفحات بيتعملها prerender) |
+| `npm run start` | تشغيل البناء الإنتاجي |
+| `npm run lint` | ESLint (eslint-config-next + قواعد React Compiler) |
+
+**الرقم السري الافتراضي للوحة:** `1234` — اتغيره من تبويب «البيانات والحماية». لو نسيته، اللوحة بتعرض الرقم المحفوظ على جهازك في صفحة الدخول.
+
+---
+
+## 📦 التقنيات
+
+- **Next.js 16** (App Router + Turbopack) · **React 19** · **TypeScript** (strict)
+- **Tailwind CSS v4** (توكنات CSS Variables: `bg-surface`، `text-accent`، `rounded-card`…)
+- **lucide-react** للأيقونات · **canvas-confetti** لاحتفال الطلب
+- تخزين: `localStorage` + `BroadcastChannel` بس
+
+---
+
+## 🗂️ خريطة الملفات
+
+```
+app/
+├─ layout.tsx              # الخط + metadata + سكربتAnti-flash
+├─ globals.css             # التوكنات (ألوان/حواف/خطوط) ووضع dark-light
+├─ page.tsx                # قائمة العملاء
+└─ admin/
+   ├─ layout.tsx           # noindex للوحة
+   └─ page.tsx             # <AdminApp />
+components/
+├─ ui.tsx                  # أزرار/حقول/مودال/توست…
+├─ image-field.tsx          # رابط صورة أو رفع + ضغط في المتصفح
+├─ site-theme.tsx           # يترجم الإعدادات لـ CSS variables
+├─ public/ (dish-card, cart-sheet)
+└─ admin/  (admin-app + panel-dashboard/brand/look/categories/items/ordering/data)
+lib/
+├─ types.ts                # كل النماذج
+├─ defaults.ts             # DEFAULT_DATA (نقطة النشر)
+├─ storage.ts              # قراءة/كتابة/دمج مع الافتراضي + مزامنة
+├─ menu-store-core.ts       # المخزن (بدون React) + كل الـ mutations
+├─ use-menu.tsx            # useMenu()
+├─ cart-store-core.ts + use-cart.ts
+├─ admin-session-core.ts + use-admin-session.ts
+├─ format.ts               # الأسعار، الإجماليات، رسالة واتساب، رقم الواتساب
+├─ fonts.ts                # اختيارات الخط
+├─ image.ts                # ضغط الصور بـ canvas
+└─ use-hash.ts             # ربط التبويب الحالي بالـ hash
+```
+
+---
+
+## ⚠️ حدود المشروع (مقصود)
+
+| النقطة | التفصيل |
+| --- | --- |
+| لكل جهاز | تعديلات الأدمين محفوظة في متصفح الجهاز اللي عدّل منه لحد ما تعمل الخطوة «تنشر لكل العملاء». |
+| الصور المرفوعة | بتتحول `dataURL` مضغوطة (≤ 1000px / WebP) وبتاستهلك من حصة الـ 5MB — اللوحة بتعرض الحجم المستخدم. |
+| الطلبات | مفيش قاعدة طلبات؛ الطلب بيترسل على واتساب. لو عايز سجل طلبات + إحصائيات محتاجين تخزين سحابي. |
+| الرقم السري | قفل واجهة للراحة مش حماية. |
+
+---
+
+## 📝 الخطوات الجاية المقترحة
+
+- [ ] ربط Firebase/Supabase عشان النشر اللحظي بدون Deploy.
+- [ ] إضافات للأصناف (حجم، إضافات، اختيارات إجبارية) مع حساب سعر لكل اختيار.
+- [ ] سجل طلبات + طباعة الفواتير.
+- [ ] OG image ديناميكية لكل صنف.
