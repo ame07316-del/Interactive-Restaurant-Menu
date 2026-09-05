@@ -1,9 +1,4 @@
-import {
-  BROADCAST_NAME,
-  CART_KEY,
-  DEFAULT_DATA,
-  STORAGE_KEY,
-} from "./defaults";
+import { CART_KEY, DEFAULT_DATA, STORAGE_KEY } from "./defaults";
 import type { CartLine, MenuData } from "./types";
 
 export const DATA_VERSION = 1;
@@ -110,32 +105,15 @@ export function storageFootprint(): number {
   return Math.round(bytes / 1024);
 }
 
-let channel: BroadcastChannel | null = null;
-function getChannel(): BroadcastChannel | null {
-  if (typeof window === "undefined" || typeof BroadcastChannel === "undefined") {
-    return null;
-  }
-  if (!channel) channel = new BroadcastChannel(BROADCAST_NAME);
-  return channel;
-}
-
-/** يبلّغ باقي التابات إن البيانات اتغيرت (معاينة لايف) */
-export function broadcastUpdate() {
-  getChannel()?.postMessage({ type: "menu-updated", at: Date.now() });
-}
-
+/**
+ * التبويبات التانية في نفس المتصفح بتتحدّث عن طريق حدث storage المدمج
+ * (BroadcastChannel كان زيادة عن اللزوم بعد ما بقى في Supabase Realtime للأجهزة التانية).
+ */
 export function subscribeToUpdates(cb: () => void): () => void {
-  const chan = getChannel();
-  const onMessage = (event: MessageEvent) => {
-    if (event.data?.type === "menu-updated") cb();
-  };
+  if (typeof window === "undefined") return () => {};
   const onStorage = (event: StorageEvent) => {
-    if (event.key === STORAGE_KEY) cb();
+    if (event.key === null || event.key === STORAGE_KEY) cb();
   };
-  chan?.addEventListener("message", onMessage);
   window.addEventListener("storage", onStorage);
-  return () => {
-    chan?.removeEventListener("message", onMessage);
-    window.removeEventListener("storage", onStorage);
-  };
+  return () => window.removeEventListener("storage", onStorage);
 }

@@ -17,7 +17,11 @@ import {
   patchBrand,
   patchCommerce,
   patchContact,
+  publishNow,
+  refreshFromCloud,
   resetToDefaults,
+  retryCloud,
+  saveDraftNow,
   setCategoryAvailability,
   subscribeMenu,
   updateCategory,
@@ -48,5 +52,10 @@ export function useMenu() {
     exportJson,
     importJson,
     resetToDefaults,
+    // المزامنة مع Supabase (بتتجاهل نفسها لو Supabase مش متظبط)
+    publishNow,
+    saveDraftNow,
+    retryCloud,
+    refreshFromCloud,
   };
 }

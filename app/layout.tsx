@@ -28,7 +28,8 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    <html lang="ar" dir="rtl" data-theme="dark" className="h-full antialiased">
+    // سكربت الـ anti-flash بيعدّل خصائص <html> قبل الهيدريشن — بنسكّت التحذير المقصود
+    <html lang="ar" dir="rtl" data-theme="dark" className="h-full antialiased" suppressHydrationWarning>
       <head>
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
