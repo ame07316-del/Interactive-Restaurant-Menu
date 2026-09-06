@@ -59,6 +59,7 @@ export function CartSheet({
   const [table, setTable] = useState("");
   const [notes, setNotes] = useState("");
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [sending, setSending] = useState(false);
 
   const totals = useMemo(() => computeTotals(lines, commerce, orderType), [lines, commerce, orderType]);
   const belowMinimum = commerce.minimumOrder > 0 && totals.subtotal > 0 && totals.subtotal < commerce.minimumOrder;
@@ -85,8 +86,8 @@ export function CartSheet({
     return Object.keys(next).length === 0;
   };
 
-  const send = () => {
-    if (!validate()) return;
+  const send = async () => {
+    if (!validate() || sending) return;
     const number = toWhatsappNumber(contact.whatsapp);
     if (!number) {
       setErrors({ total: en ? "The shop did not set a WhatsApp number" : "صاحب المطعم لسه ما حددش رقم واتساب" });
@@ -96,12 +97,30 @@ export function CartSheet({
       { name, phone, address, table, notes, orderType, lines, totals },
       { lang, brand, contact, commerce },
     );
-    if (commerce.enableConfetti) {
-      confetti({ particleCount: 130, spread: 75, origin: { y: 0.65 }, colors: [brand.accent, "#22c55e", "#ffffff"] });
-    }
-    window.open(`https://wa.me/${number}?text=${encodeURIComponent(message)}`, "_blank", "noopener");
-    clear();
-    onClose();
+    const whatsappWindow = window.open("about:blank", "_blank");
+    setSending(true);
+    try {
+      const response = await fetch("/api/orders", {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          lines: lines.map(({ line }) => line), orderType, total: totals.total,
+          customer: { name, phone, address, table, notes },
+        }),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "تعذر تسجيل الطلب");
+      if (commerce.enableConfetti) {
+        confetti({ particleCount: 130, spread: 75, origin: { y: 0.65 }, colors: [brand.accent, "#22c55e", "#ffffff"] });
+      }
+      const url = `https://wa.me/${number}?text=${encodeURIComponent(`${message}\n\nرقم الطلب: ${result.order.id}`)}`;
+      if (whatsappWindow) whatsappWindow.location.href = url;
+      else window.location.href = url;
+      clear();
+      onClose();
+    } catch (error) {
+      whatsappWindow?.close();
+      setErrors({ total: error instanceof Error ? error.message : (en ? "Could not submit order" : "تعذر تسجيل الطلب") });
+    } finally { setSending(false); }
   };
 
   const field = (
@@ -345,11 +364,11 @@ export function CartSheet({
           <button
             type="button"
             onClick={send}
-            disabled={lines.length === 0 || !contact.isOpen || !commerce.enableCart}
+            disabled={sending || lines.length === 0 || !contact.isOpen || !commerce.enableCart}
             className="flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 py-3.5 text-sm font-black text-white shadow-lg shadow-emerald-600/20 transition hover:bg-emerald-500 disabled:opacity-40"
           >
             <Send className="h-4 w-4" />
-            {en ? "Send order on WhatsApp" : "إرسال الطلب على واتساب"}
+            {sending ? (en ? "Saving order…" : "جاري تسجيل الطلب…") : en ? "Send order on WhatsApp" : "إرسال الطلب على واتساب"}
           </button>
         </footer>
       </aside>

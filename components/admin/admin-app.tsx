@@ -3,12 +3,15 @@
 import { useMemo, useState } from "react";
 import {
   CircleCheck,
+  Cloud,
   Database,
   ExternalLink,
   FolderTree,
   LayoutDashboard,
   LoaderCircle,
+  KeyRound,
   Lock,
+  Mail,
   LogOut,
   Monitor,
   Palette,
@@ -51,7 +54,8 @@ const TABS: { key: TabKey; label: string; icon: typeof LayoutDashboard }[] = [
 
 export function AdminApp() {
   const { ready, data, saveState } = useMenu();
-  const { authed, checked, login, logout } = useAdminSession(data.admin.pin, data.admin.lockAdmin);
+  const session = useAdminSession(data.admin.pin, data.admin.lockAdmin);
+  const { authed, checked, login, logout } = session;
   const [tab, setTab] = useHashValue<TabKey>(
     TABS.map((item) => item.key),
     "dashboard",
@@ -80,7 +84,15 @@ export function AdminApp() {
 
   if (!authed)
     return (
-      <AdminLogin siteName={siteTitle} login={login} locked={data.admin.lockAdmin} pin={data.admin.pin} />
+      <AdminLogin
+        siteName={siteTitle}
+        mode={session.mode}
+        login={login}
+        signIn={session.signIn}
+        busy={session.busy}
+        authError={session.authError}
+        locked={data.admin.lockAdmin}
+      />
     );
 
   return (
@@ -98,7 +110,9 @@ export function AdminApp() {
             )}
             <div className="min-w-0">
               <p className="truncate text-sm font-black leading-tight">{siteTitle}</p>
-              <p className="text-[11px] text-muted">لوحة التحكم — كل الإعدادات من هنا</p>
+              <p className="truncate text-[11px] text-muted">
+                {session.mode === "supabase" && session.email ? session.email : "لوحة التحكم — كل الإعدادات من هنا"}
+              </p>
             </div>
           </div>
 
@@ -155,9 +169,8 @@ export function AdminApp() {
               </button>
             ))}
           </nav>
-          <div className="mt-4 rounded-card border border-line bg-surface p-3 text-[11px] leading-relaxed text-muted">
-            الموقع كله فروت إند: التعديلات بتتحفظ في المتصفح (localStorage) وبتنشر لكل العملاء عن طريق
-            تصدير JSON → استبدال <span className="font-mono text-accent">lib/defaults.ts</span>.
+          <div className="mt-4 rounded-card border border-emerald-500/25 bg-emerald-500/10 p-3 text-[11px] leading-relaxed text-emerald-300">
+            متصل بالباك إند — أي تعديل بيتحفظ في قاعدة بيانات الموقع ويظهر فوراً لكل العملاء وعلى كل الأجهزة.
           </div>
         </aside>
 
@@ -194,24 +207,34 @@ function SaveChip({ state }: { state: ReturnType<typeof useMenu>["saveState"] })
 
 function AdminLogin({
   siteName,
+  mode,
   login,
+  signIn,
+  busy,
+  authError,
   locked,
-  pin,
 }: {
   siteName: string;
-  login: (attempt: string, remember?: boolean) => boolean;
+  mode: "supabase" | "pin";
+  login: (attempt: string, remember?: boolean) => Promise<boolean>;
+  signIn: (email: string, password: string) => Promise<boolean>;
+  busy: boolean;
+  authError: string | null;
   locked: boolean;
-  pin: string;
 }) {
   const [value, setValue] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [remember, setRemember] = useState(true);
   const [error, setError] = useState(false);
 
-  const submit = (event: React.FormEvent) => {
+  const submit = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (!login(value, remember)) {
+    const ok = mode === "supabase" ? await signIn(email, password) : await login(value, remember);
+    if (!ok) {
       setError(true);
       setValue("");
+      setPassword("");
       window.setTimeout(() => setError(false), 700);
     }
   };
@@ -226,57 +249,69 @@ function AdminLogin({
         )}
       >
         <span className="mb-4 grid h-12 w-12 place-items-center rounded-2xl bg-accent text-accent-contrast">
-          <Lock className="h-5 w-5" />
+          {mode === "supabase" ? <Cloud className="h-5 w-5" /> : <Lock className="h-5 w-5" />}
         </span>
         <h1 className="text-lg font-black">لوحة تحكم {siteName}</h1>
         <p className="mt-1 text-xs leading-relaxed text-muted">
-          المنطقة دي لأصحاب المطعم. اكتب الرقم السري اللي حددته في الإعدادات عشان تكمل.
+          {mode === "supabase"
+            ? "سجّل دخول بإيميل وباسورد حساب الأدمن المحفوظ في Supabase."
+            : "إعدادات Supabase غير موجودة، لذلك يعمل الدخول الاحتياطي بالرقم السري."}
         </p>
 
-        <div className="mt-4">
-          <Field label="الرقم السري">
-            <TextInput
-              autoFocus
-              type="password"
-              inputMode="numeric"
-              value={value}
-              onChange={(event) => setValue(event.target.value)}
-              placeholder="••••"
-              className={cx("text-center font-mono text-lg tracking-[.4em]", error && "border-red-500/60")}
-            />
-          </Field>
-          {error ? <p className="mt-1.5 text-[11px] font-bold text-red-400">الرقم غلط — حاول تاني</p> : null}
-        </div>
+        {mode === "supabase" ? (
+          <div className="mt-4 space-y-3">
+            <Field label="الإيميل">
+              <div className="relative">
+                <Mail className="pointer-events-none absolute inset-y-0 start-3 my-auto h-3.5 w-3.5 text-muted" />
+                <TextInput autoFocus type="email" autoComplete="email" dir="ltr" value={email}
+                  onChange={(event) => setEmail(event.target.value)} placeholder="owner@restaurant.com"
+                  className="ps-9 text-start" required />
+              </div>
+            </Field>
+            <Field label="الباسورد">
+              <div className="relative">
+                <KeyRound className="pointer-events-none absolute inset-y-0 start-3 my-auto h-3.5 w-3.5 text-muted" />
+                <TextInput type="password" autoComplete="current-password" dir="ltr" value={password}
+                  onChange={(event) => setPassword(event.target.value)} placeholder="••••••••"
+                  className="ps-9 text-start" required />
+              </div>
+            </Field>
+          </div>
+        ) : (
+          <>
+            <div className="mt-4">
+              <Field label="الرقم السري">
+                <TextInput autoFocus type="password" inputMode="numeric" value={value}
+                  onChange={(event) => setValue(event.target.value)} placeholder="••••"
+                  className={cx("text-center font-mono text-lg tracking-[.4em]", error && "border-red-500/60")} />
+              </Field>
+            </div>
+            <label className="mt-3 flex items-center gap-2 text-[11px] font-bold text-muted">
+              <input type="checkbox" checked={remember} onChange={(event) => setRemember(event.target.checked)}
+                className="h-3.5 w-3.5 accent-[var(--accent)]" />
+              افتكرني على الجهاز ده
+            </label>
+          </>
+        )}
 
-        <label className="mt-3 flex items-center gap-2 text-[11px] font-bold text-muted">
-          <input
-            type="checkbox"
-            checked={remember}
-            onChange={(event) => setRemember(event.target.checked)}
-            className="h-3.5 w-3.5 accent-[var(--accent)]"
-          />
-          افتكرني على الجهاز ده
-        </label>
-
-        <Button type="submit" className="mt-4 w-full" size="lg">
-          دخول
+        {error || authError ? (
+          <p className="mt-2 text-[11px] font-bold text-red-400">{authError || "بيانات الدخول غير صحيحة"}</p>
+        ) : null}
+        <Button type="submit" className="mt-4 w-full" size="lg" disabled={busy}>
+          {busy ? <LoaderCircle className="h-4 w-4 animate-spin" /> : null} دخول
         </Button>
 
-        {locked ? (
-          <details className="mt-4 rounded-xl border border-line bg-surface-2/50 p-2.5">
-            <summary className="cursor-pointer text-[11px] font-bold text-muted hover:text-ink">
-              نسيت الرقم السري؟
-            </summary>
-            <p className="mt-2 text-[11px] leading-relaxed text-muted">
-              الرقم الحالي على الجهاز ده:{" "}
-              <code className="rounded-md bg-accent/15 px-2 py-0.5 font-mono font-black text-accent">{pin}</code>{" "}
-              — بيظهر هنا لأن مفيش سيرفر من الأصل. غيّره بعد الدخول من تبويب «البيانات والحماية»، أو امسح بيانات الموقع
-              من إعدادات المتصفح يرجع 1234.
-            </p>
-          </details>
+        {mode === "supabase" ? (
+          <p className="mt-3 rounded-xl border border-emerald-500/20 bg-emerald-500/8 p-2.5 text-[11px] leading-relaxed text-emerald-300">
+            كل طلب تعديل للمنيو أو قراءة بيانات الأدمن بيتحقق من Supabase access token على السيرفر.
+          </p>
+        ) : locked ? (
+          <p className="mt-3 text-[11px] leading-relaxed text-muted">
+            أضف NEXT_PUBLIC_SUPABASE_URL وNEXT_PUBLIC_SUPABASE_ANON_KEY لتفعيل دخول الإيميل والباسورد.
+          </p>
         ) : (
           <p className="mt-3 flex items-center gap-1.5 rounded-xl bg-amber-500/10 p-2.5 text-[11px] font-bold text-amber-400">
-            <Phone className="h-3.5 w-3.5" /> القفل مطفي من الإعدادات — الدخول مفتوح لأي حد عنده اللينك.
+            <Phone className="h-3.5 w-3.5" /> القفل مطفي من الإعدادات.
           </p>
         )}
       </form>

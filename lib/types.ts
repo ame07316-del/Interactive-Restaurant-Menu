@@ -1,6 +1,5 @@
 /**
- * نماذج البيانات الخاصة بالمطعم — كلها تُخزَّن في المتصفح (localStorage)
- * بدون أي باك إند أو قاعدة بيانات.
+ * نماذج بيانات المطعم المشتركة بين الواجهة والباك إند.
  */
 
 export type SiteLanguage = "ar" | "en";
@@ -34,6 +33,12 @@ export interface MenuItem {
   spicy: 0 | 1 | 2 | 3;
   /** ترتيب يدوي داخل القسم (الأصغر يظهر أولاً) */
   order: number;
+  /** تفعيل متابعة المخزون لهذا الصنف */
+  trackStock?: boolean;
+  /** الكمية المتاحة حالياً */
+  stock?: number;
+  /** إنشاء تنبيه عند الوصول لهذا العدد (الافتراضي 2) */
+  lowStockThreshold?: number;
 }
 
 export interface BrandSettings {
@@ -97,7 +102,7 @@ export interface CommerceSettings {
 }
 
 export interface AdminSettings {
-  /** رقم سري بسيط لحماية لوحة التحكم (واجهة فقط) */
+  /** رقم سري احتياطي للتطوير عندما لا تكون Supabase Auth مُعدّة */
   pin: string;
   lockAdmin: boolean;
 }
