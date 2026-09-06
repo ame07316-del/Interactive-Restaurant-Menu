@@ -7,7 +7,7 @@ import { Button, Field } from "./ui";
 
 /**
  * حقل صورة يقبل رابط أو رفع من الجهاز (الصورة بتتضغط وتتحول dataURL
- * وتتخزن في localStorage — من غير أي سيرفر).
+ * وتترفع ضمن بيانات الموقع على الباك إند).
  */
 export function ImageField({
   label,

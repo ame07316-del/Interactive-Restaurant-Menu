@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   ArrowUpRight,
   CircleCheck,
@@ -11,6 +11,8 @@ import {
   UtensilsCrossed,
   FolderTree,
   Wallet,
+  Bell,
+  Package,
 } from "lucide-react";
 import { useMenu } from "@/lib/use-menu";
 import { Badge, Button, Panel } from "@/components/ui";
@@ -19,6 +21,13 @@ import { cx } from "@/lib/cx";
 export function DashboardPanel({ onJump }: { onJump: (tab: string, payload?: string) => void }) {
   const { data, isCustomized, storageKb } = useMenu();
   const { items, categories, brand, contact, commerce, admin } = data;
+  const [overview, setOverview] = useState<{ orders: Array<{ id: string; total: number; createdAt: string }>; notifications: Array<{ id: string; itemName: string; remaining: number; read: boolean }> }>({ orders: [], notifications: [] });
+
+  useEffect(() => {
+    fetch("/api/admin/overview", { cache: "no-store" }).then((response) => response.ok ? response.json() : overview).then(setOverview).catch(() => undefined);
+    // تحميل مرة عند فتح لوحة المتابعة
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const stats = useMemo(() => {
     const soldOut = items.filter((item) => !item.available).length;
@@ -80,6 +89,24 @@ export function DashboardPanel({ onJump }: { onJump: (tab: string, payload?: str
         <Stat icon={<Wallet className="h-4 w-4" />} label="متوسط السعر" value={`${stats.avg} ${commerce.currency}`} hint="لكل صنف" />
       </div>
 
+      {overview.notifications.filter((notification) => !notification.read).length > 0 ? (
+        <Panel
+          title="تنبيهات المخزون"
+          description="رسالة تلقائية عند وصول أي صنف للحد اللي حددته"
+          icon={<Bell className="h-4 w-4" />}
+          actions={<Button size="sm" variant="outline" onClick={async () => { await fetch("/api/admin/overview", { method: "PATCH" }); setOverview((current) => ({ ...current, notifications: current.notifications.map((row) => ({ ...row, read: true })) })); }}>تحديد كمقروء</Button>}
+        >
+          <div className="grid gap-2 sm:grid-cols-2">
+            {overview.notifications.filter((notification) => !notification.read).slice(0, 6).map((notification) => (
+              <div key={notification.id} className="flex items-center gap-3 rounded-xl border border-amber-500/30 bg-amber-500/10 p-3">
+                <Package className="h-5 w-5 shrink-0 text-amber-400" />
+                <div><p className="text-xs font-black">{notification.itemName}</p><p className="text-[11px] text-amber-300">متبقي {notification.remaining} فقط — راجع المخزون</p></div>
+              </div>
+            ))}
+          </div>
+        </Panel>
+      ) : null}
+
       <div className="grid gap-4 lg:grid-cols-2">
         <Panel title="صحة القائمة" description="كل النقاط دي لازم تبقى خضراء قبل ما تفتح للعملاء" icon={<CircleCheck className="h-4 w-4" />}>
           <ul className="space-y-2">
@@ -116,7 +143,7 @@ export function DashboardPanel({ onJump }: { onJump: (tab: string, payload?: str
         </Panel>
 
         <div className="space-y-4">
-          <Panel title="حفظ سريع" description="أي تعديل بيتخزن أوتوماتيك في المتصفح" icon={<Database className="h-4 w-4" />}>
+          <Panel title="حفظ سحابي" description="أي تعديل بيتخزن أوتوماتيك في الباك إند" icon={<Database className="h-4 w-4" />}>
             <div className="space-y-3 text-xs">
               <div className="flex items-center justify-between rounded-xl border border-line bg-surface-2/50 px-3 py-2.5">
                 <span className="text-muted">التخزين المستخدم</span>
@@ -130,11 +157,11 @@ export function DashboardPanel({ onJump }: { onJump: (tab: string, payload?: str
               </div>
               <p className="text-[11px] leading-relaxed text-muted">
                 {isCustomized
-                  ? "التعديلات محفوظة على المتصفح ده. عشان تنشرها لكل العملاء: صدّر JSON واستبدل lib/defaults.ts ثم اعمل deploy."
-                  : "لسه بتعرض البيانات الافتراضية — أول تعديل هيتم حفظه على جهازك."}
+                  ? "التعديلات محفوظة في قاعدة بيانات الموقع ومتاحة فوراً لكل العملاء والأجهزة."
+                  : "جاري تجهيز قاعدة بيانات الموقع."}
               </p>
               <Badge tone={isCustomized ? "success" : "neutral"}>
-                {isCustomized ? "معدل محلياً" : "بيانات افتراضية"}
+                {isCustomized ? "متصل بالباك إند" : "جاري الاتصال"}
               </Badge>
             </div>
             <div className="mt-3 flex flex-wrap gap-2">

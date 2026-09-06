@@ -149,7 +149,7 @@ export function BrandPanel() {
           <Button size="sm" variant="soft" onClick={() => window.open("/", "_blank")}>
             معاينة الموقع في تبويب جديد
           </Button>
-          التعديلات بتظهر في الموقع فوراً في نفس المتصفح.
+          التعديلات بتتحفظ في الباك إند وتظهر فوراً لكل العملاء.
         </p>
       </Panel>
     </div>

@@ -80,7 +80,7 @@ export function AdminApp() {
 
   if (!authed)
     return (
-      <AdminLogin siteName={siteTitle} login={login} locked={data.admin.lockAdmin} pin={data.admin.pin} />
+      <AdminLogin siteName={siteTitle} login={login} locked={data.admin.lockAdmin} />
     );
 
   return (
@@ -155,9 +155,8 @@ export function AdminApp() {
               </button>
             ))}
           </nav>
-          <div className="mt-4 rounded-card border border-line bg-surface p-3 text-[11px] leading-relaxed text-muted">
-            الموقع كله فروت إند: التعديلات بتتحفظ في المتصفح (localStorage) وبتنشر لكل العملاء عن طريق
-            تصدير JSON → استبدال <span className="font-mono text-accent">lib/defaults.ts</span>.
+          <div className="mt-4 rounded-card border border-emerald-500/25 bg-emerald-500/10 p-3 text-[11px] leading-relaxed text-emerald-300">
+            متصل بالباك إند — أي تعديل بيتحفظ في قاعدة بيانات الموقع ويظهر فوراً لكل العملاء وعلى كل الأجهزة.
           </div>
         </aside>
 
@@ -196,20 +195,18 @@ function AdminLogin({
   siteName,
   login,
   locked,
-  pin,
 }: {
   siteName: string;
-  login: (attempt: string, remember?: boolean) => boolean;
+  login: (attempt: string, remember?: boolean) => Promise<boolean>;
   locked: boolean;
-  pin: string;
 }) {
   const [value, setValue] = useState("");
   const [remember, setRemember] = useState(true);
   const [error, setError] = useState(false);
 
-  const submit = (event: React.FormEvent) => {
+  const submit = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (!login(value, remember)) {
+    if (!(await login(value, remember))) {
       setError(true);
       setValue("");
       window.setTimeout(() => setError(false), 700);
@@ -268,10 +265,8 @@ function AdminLogin({
               نسيت الرقم السري؟
             </summary>
             <p className="mt-2 text-[11px] leading-relaxed text-muted">
-              الرقم الحالي على الجهاز ده:{" "}
-              <code className="rounded-md bg-accent/15 px-2 py-0.5 font-mono font-black text-accent">{pin}</code>{" "}
-              — بيظهر هنا لأن مفيش سيرفر من الأصل. غيّره بعد الدخول من تبويب «البيانات والحماية»، أو امسح بيانات الموقع
-              من إعدادات المتصفح يرجع 1234.
+              حفاظاً على الأمان الرقم السري لا يظهر في الواجهة. غيّره بعد الدخول، أو حدده من متغير البيئة
+              <code className="mx-1 rounded-md bg-accent/15 px-2 py-0.5 font-mono font-black text-accent">ADMIN_PIN</code>.
             </p>
           </details>
         ) : (

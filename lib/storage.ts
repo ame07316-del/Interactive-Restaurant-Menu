@@ -45,6 +45,10 @@ export function normalizeData(raw: unknown): MenuData {
     items: merged.items
       .map((item) => ({
         ...item,
+        // الأصناف القديمة تبدأ بمخزون افتراضي ويمكن للأدمن تغييره أو إيقاف متابعته
+        trackStock: item.trackStock ?? true,
+        stock: item.stock ?? (item.available ? 10 : 0),
+        lowStockThreshold: item.lowStockThreshold ?? 2,
         // الأمان: أي صنف قسمه اتحذف ينزل في قسم "غير مصنّف" بدل ما يختفي
         categoryId: knownCats.has(item.categoryId)
           ? item.categoryId

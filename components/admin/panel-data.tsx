@@ -63,7 +63,7 @@ export function DataPanel() {
     <div className="space-y-4">
       <Panel
         title="نشر التعديلات لكل العملاء"
-        description="من غير باك إند: التعديلات بتتحفظ في المتصفح بتاعك — والخطوة دي تنقلها للكود نفسه"
+        description="نسخة احتياطية من بيانات الباك إند للاسترجاع أو النقل"
         icon={<Database className="h-4 w-4" />}
       >
         <ol className="space-y-2.5">
@@ -104,7 +104,7 @@ export function DataPanel() {
             <Braces className="h-3.5 w-3.5" /> نسخ كـ TypeScript
           </Button>
           <span className="text-[11px] text-muted">
-            {isCustomized ? "معدل محلياً" : "لم يتم تعديل بعد"} · {storageKb} KB
+            {isCustomized ? "متصل بالباك إند" : "جاري الاتصال"} · {storageKb} KB
           </span>
         </div>
       </Panel>
@@ -112,7 +112,7 @@ export function DataPanel() {
       <div className="grid gap-4 lg:grid-cols-2">
         <Panel title="استيراد قائمة جاهزة" icon={<Upload className="h-4 w-4" />}>
           <p className="mb-3 text-[11px] leading-relaxed text-muted">
-            اختار ملف JSON صدرته قبل كده (من نفس المتصفح أو من جهاز تاني) وهيحلّ محل القائمة الحالية فوراً.
+            اختار ملف JSON صدرته قبل كده وهيحلّ محل بيانات الموقع على السيرفر فوراً.
           </p>
           <input ref={fileRef} type="file" accept="application/json,.json" className="hidden" onChange={(event) => readFile(event.target.files?.[0])} />
           <Button size="sm" variant="soft" onClick={() => fileRef.current?.click()}>
@@ -142,7 +142,7 @@ export function DataPanel() {
           </details>
         </Panel>
 
-        <Panel title="حماية لوحة التحكم" description="قفل بسيط في المتصفح — مش حماية سيرفر" icon={<Lock className="h-4 w-4" />}>
+        <Panel title="حماية لوحة التحكم" description="جلسة آمنة ومحمية من السيرفر" icon={<Lock className="h-4 w-4" />}>
           <div className="space-y-3">
             <Toggle
               label="طلب رقم سري قبل فتح اللوحة"
@@ -168,8 +168,7 @@ export function DataPanel() {
             </Field>
             <p className="flex gap-2 rounded-xl border border-amber-500/25 bg-amber-500/8 p-2.5 text-[11px] leading-relaxed text-amber-300">
               <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-              الموقع كله فروت إند بدون باك إند، فالقفل ده للواجهة بس. لأي حماية حقيقية استخدم Vercel
-              Password Protection أو Cloudflare Access على مسار /admin.
+              تسجيل الدخول محمي من الباك إند بجلسة HttpOnly. استخدم رقماً قوياً وحدد SESSION_SECRET في الإنتاج.
             </p>
           </div>
         </Panel>
@@ -206,11 +205,11 @@ export function DataPanel() {
         </div>
       </Panel>
 
-      <Panel title="منطقة الخطر" description="مسح البيانات المحفوظة في المتصفح ده" icon={<RefreshCw className="h-4 w-4" />}>
+      <Panel title="منطقة الخطر" description="إعادة بيانات الموقع على السيرفر للوضع الافتراضي" icon={<RefreshCw className="h-4 w-4" />}>
         <div className="flex flex-wrap items-center gap-2">
           {confirmReset ? (
             <>
-              <span className="text-xs font-bold text-red-400">متأكد؟ كل التعديلات المحلية هتتمسح.</span>
+              <span className="text-xs font-bold text-red-400">متأكد؟ بيانات الموقع الحالية على السيرفر هتتمسح.</span>
               <Button
                 size="sm"
                 variant="danger"
