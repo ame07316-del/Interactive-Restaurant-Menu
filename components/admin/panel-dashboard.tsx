@@ -17,14 +17,16 @@ import {
 import { useMenu } from "@/lib/use-menu";
 import { Badge, Button, Panel } from "@/components/ui";
 import { cx } from "@/lib/cx";
+import { authenticatedFetch } from "@/lib/supabase-auth-core";
 
 export function DashboardPanel({ onJump }: { onJump: (tab: string, payload?: string) => void }) {
   const { data, isCustomized, storageKb } = useMenu();
   const { items, categories, brand, contact, commerce, admin } = data;
+  const supabaseAuth = Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
   const [overview, setOverview] = useState<{ orders: Array<{ id: string; total: number; createdAt: string }>; notifications: Array<{ id: string; itemName: string; remaining: number; read: boolean }> }>({ orders: [], notifications: [] });
 
   useEffect(() => {
-    fetch("/api/admin/overview", { cache: "no-store" }).then((response) => response.ok ? response.json() : overview).then(setOverview).catch(() => undefined);
+    authenticatedFetch("/api/admin/overview", { cache: "no-store" }).then((response) => response.ok ? response.json() : overview).then(setOverview).catch(() => undefined);
     // تحميل مرة عند فتح لوحة المتابعة
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -73,9 +75,9 @@ export function DashboardPanel({ onJump }: { onJump: (tab: string, payload?: str
       tab: "ordering",
     },
     {
-      ok: !admin.lockAdmin,
-      label: "قفل الأدمين",
-      fix: `الرقم السري الحالي: ${admin.pin}`,
+      ok: supabaseAuth || admin.lockAdmin,
+      label: "حماية الأدمين",
+      fix: "أضف إعدادات Supabase Auth أو فعّل الرقم السري الاحتياطي",
       tab: "data",
     },
   ];
@@ -94,7 +96,7 @@ export function DashboardPanel({ onJump }: { onJump: (tab: string, payload?: str
           title="تنبيهات المخزون"
           description="رسالة تلقائية عند وصول أي صنف للحد اللي حددته"
           icon={<Bell className="h-4 w-4" />}
-          actions={<Button size="sm" variant="outline" onClick={async () => { await fetch("/api/admin/overview", { method: "PATCH" }); setOverview((current) => ({ ...current, notifications: current.notifications.map((row) => ({ ...row, read: true })) })); }}>تحديد كمقروء</Button>}
+          actions={<Button size="sm" variant="outline" onClick={async () => { await authenticatedFetch("/api/admin/overview", { method: "PATCH" }); setOverview((current) => ({ ...current, notifications: current.notifications.map((row) => ({ ...row, read: true })) })); }}>تحديد كمقروء</Button>}
         >
           <div className="grid gap-2 sm:grid-cols-2">
             {overview.notifications.filter((notification) => !notification.read).slice(0, 6).map((notification) => (

@@ -6,7 +6,7 @@ export const runtime = "nodejs";
 
 export async function GET(request: NextRequest) {
   const menu = await getMenu();
-  return NextResponse.json({ authenticated: !menu.admin.lockAdmin || isAdminRequest(request) });
+  return NextResponse.json({ authenticated: !menu.admin.lockAdmin || await isAdminRequest(request) });
 }
 
 export async function DELETE() {

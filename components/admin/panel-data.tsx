@@ -153,7 +153,7 @@ export function DataPanel() {
                 show(checked ? "اللوحة اتقفلت بالرقم السري" : "اللوحة بقت مفتوحة لأي حد عنده اللينك");
               }}
             />
-            <Field label="الرقم السري" hint="٤ أرقام أو أكتر — بيتحفظ في متصفح الجهاز بس">
+            <Field label="الرقم السري الاحتياطي" hint="يُستخدم محلياً فقط إذا لم تكن إعدادات Supabase موجودة">
               <div className="flex items-center gap-2">
                 <TextInput
                   type={showPin ? "text" : "password"}
@@ -168,7 +168,7 @@ export function DataPanel() {
             </Field>
             <p className="flex gap-2 rounded-xl border border-amber-500/25 bg-amber-500/8 p-2.5 text-[11px] leading-relaxed text-amber-300">
               <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-              تسجيل الدخول محمي من الباك إند بجلسة HttpOnly. استخدم رقماً قوياً وحدد SESSION_SECRET في الإنتاج.
+              عند إعداد Supabase يتم تجاهل الرقم الاحتياطي، وتُحمى عمليات الأدمن بحساب الإيميل والباسورد وSupabase access token.
             </p>
           </div>
         </Panel>

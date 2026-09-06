@@ -1,5 +1,6 @@
 import { DEFAULT_DATA } from "./defaults";
 import { normalizeData } from "./storage";
+import { authenticatedFetch } from "./supabase-auth-core";
 import type { Category, MenuData, MenuItem } from "./types";
 
 export type SaveState = "idle" | "dirty" | "saved" | "error";
@@ -20,7 +21,7 @@ const newId = () => crypto.randomUUID().slice(0, 8);
 
 export async function refreshMenu() {
   try {
-    const response = await fetch("/api/menu", { cache: "no-store" });
+    const response = await authenticatedFetch("/api/menu", { cache: "no-store" });
     if (!response.ok) throw new Error();
     const data = normalizeData(await response.json());
     set({ data, ready: true, isCustomized: true, storageKb: sizeOf(data), saveState: "idle" });
@@ -45,7 +46,7 @@ function schedulePersist(value: MenuData) {
   window.clearTimeout(persistTimer);
   persistTimer = window.setTimeout(async () => {
     try {
-      const response = await fetch("/api/menu", {
+      const response = await authenticatedFetch("/api/menu", {
         method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(value),
       });
       if (!response.ok) throw new Error();

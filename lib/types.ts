@@ -102,7 +102,7 @@ export interface CommerceSettings {
 }
 
 export interface AdminSettings {
-  /** رقم سري بسيط لحماية لوحة التحكم (واجهة فقط) */
+  /** رقم سري احتياطي للتطوير عندما لا تكون Supabase Auth مُعدّة */
   pin: string;
   lockAdmin: boolean;
 }
