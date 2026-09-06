@@ -2,14 +2,6 @@
 
 import { useCallback, useSyncExternalStore } from "react";
 import {
-  ADMIN_SERVER_SNAPSHOT,
-  adminLogin,
-  adminLogout,
-  getAdminSnapshot,
-  getAdminReadySnapshot,
-  subscribeAdmin,
-} from "./admin-session-core";
-import {
   AUTH_SERVER_STATE,
   clearAuthError,
   getAuthSnapshot,
@@ -17,45 +9,32 @@ import {
   signOutFromCloud,
   subscribeAuth,
 } from "./supabase-auth-core";
-
-export type AdminAuthMode = "supabase" | "demo";
+import { refreshMenu } from "./menu-store-core";
 
 /**
- * الدخول للوحة التحكم:
- *  - لو Supabase متظبط → إيميل + باسورد من Supabase Auth (حماية حقيقية بالـ RLS).
- *  - لو متغيرات البيئة ناقصة → وضع الديمو بالرقم السري وبيانات المتصفح بس.
+ * جلسة الأدمن — دخول حصري عن طريق Supabase Auth (إيميل + باسورد)
+ * من الحساب الموجود في Supabase → Authentication → Users.
  */
-export function useAdminSession(pin: string, locked: boolean) {
+export function useAdminSession() {
   const auth = useSyncExternalStore(subscribeAuth, getAuthSnapshot, () => AUTH_SERVER_STATE);
-  const granted = useSyncExternalStore(subscribeAdmin, getAdminSnapshot, () => ADMIN_SERVER_SNAPSHOT);
-  const initialized = useSyncExternalStore(subscribeAdmin, getAdminReadySnapshot, () => 0);
 
-  const mode: AdminAuthMode = auth.enabled ? "supabase" : "demo";
-  const authed = mode === "supabase" ? Boolean(auth.userId) : !locked || granted;
-  const checked = mode === "supabase" ? auth.checked && initialized === 1 : initialized === 1;
+  const signIn = useCallback(async (email: string, password: string) => {
+    const ok = await signInWithPassword(email, password);
+    if (ok) await refreshMenu();
+    return ok;
+  }, []);
 
-  const login = useCallback(
-    (attempt: string, remember = false) => adminLogin(pin, attempt, remember),
-    [pin],
-  );
-
-  const signIn = useCallback(
-    (email: string, password: string) => signInWithPassword(email, password),
-    [],
-  );
-
-  const logout = useCallback(() => {
-    adminLogout();
-    if (auth.enabled) void signOutFromCloud();
-  }, [auth.enabled]);
+  const logout = useCallback(async () => {
+    await signOutFromCloud();
+    window.location.reload();
+  }, []);
 
   return {
-    authed,
-    checked,
-    mode,
-    login,
-    logout,
+    configured: auth.configured,
+    authed: Boolean(auth.userId),
+    checked: auth.checked,
     signIn,
+    logout,
     email: auth.email,
     busy: auth.busy,
     authError: auth.error,

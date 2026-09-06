@@ -20,6 +20,10 @@
 # production
 /build
 
+# local backend database (use Upstash Redis in production)
+/data/*.json
+/data/*.tmp
+
 # misc
 .DS_Store
 *.pem

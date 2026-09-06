@@ -1,6 +1,5 @@
 /**
- * نماذج البيانات الخاصة بالمطعم — كلها تُخزَّن في المتصفح (localStorage)
- * بدون أي باك إند أو قاعدة بيانات.
+ * نماذج بيانات المطعم المشتركة بين الواجهة والباك إند.
  */
 
 export type SiteLanguage = "ar" | "en";
@@ -34,6 +33,12 @@ export interface MenuItem {
   spicy: 0 | 1 | 2 | 3;
   /** ترتيب يدوي داخل القسم (الأصغر يظهر أولاً) */
   order: number;
+  /** تفعيل متابعة المخزون لهذا الصنف */
+  trackStock?: boolean;
+  /** الكمية المتاحة حالياً */
+  stock?: number;
+  /** إنشاء تنبيه عند الوصول لهذا العدد (الافتراضي 2) */
+  lowStockThreshold?: number;
 }
 
 export interface BrandSettings {
@@ -96,21 +101,41 @@ export interface CommerceSettings {
   orderTemplate: string;
 }
 
-export interface AdminSettings {
-  /** رقم سري بسيط لحماية لوحة التحكم (واجهة فقط) */
-  pin: string;
-  lockAdmin: boolean;
-}
-
 export interface MenuData {
   version: number;
   updatedAt: string;
   brand: BrandSettings;
   contact: ContactSettings;
   commerce: CommerceSettings;
-  admin: AdminSettings;
   categories: Category[];
   items: MenuItem[];
+}
+
+/** طلب مسجّل في الباك إند بعد خصم المخزون */
+export interface SavedOrder {
+  id: string;
+  createdAt: string;
+  customer: { name: string; phone: string; address: string; table: string; notes: string };
+  orderType: OrderType;
+  lines: Array<{ itemId: string; name: string; quantity: number; unitPrice: number }>;
+  total: number;
+}
+
+/** تنبيه نقص مخزون — يظهر في لوحة التحكم ويمكن إرساله للـ webhook */
+export interface StockNotification {
+  id: string;
+  itemId: string;
+  itemName: string;
+  remaining: number;
+  threshold: number;
+  createdAt: string;
+  read: boolean;
+}
+
+export interface AdminOverview {
+  orders: SavedOrder[];
+  notifications: StockNotification[];
+  storage: { driver: "supabase" | "file"; persistent: boolean };
 }
 
 /** السلة بتخزّن المعرّف والكمية فقط، وكل حاجة تانية بتتاشتق من البيانات الحالية */

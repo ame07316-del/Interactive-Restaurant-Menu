@@ -1,9 +1,9 @@
 import type { MenuData } from "./types";
 
 /**
- * البيانات الافتراضية للموقع.
- * دي نقطة البداية الوحيدة — أي تعديل من لوحة التحكم بيتخزّن في متصفح الجهاز،
- * وممكن تصديره كـ JSON وتستبدل الملف ده عشان يبقى هو الافتراضي للجميع بعد الديبلوي.
+ * بيانات البداية (seed) اللي بتتحط في قاعدة البيانات أول مرة بس.
+ * بعد كده مصدر الحقيقة هو الباك إند: أي تعديل من لوحة التحكم بيتحفظ في
+ * جدول Supabase (أو ملف التطوير المحلي) ومنه بيقرأ كل العملاء.
  */
 export const DEFAULT_DATA: MenuData = {
   version: 1,
@@ -72,10 +72,6 @@ export const DEFAULT_DATA: MenuData = {
       "💰 *الإجمالي:* {total}",
     ].join("\n"),
   },
-  admin: {
-    pin: "1234",
-    lockAdmin: true,
-  },
   categories: [
     { id: "c1", name: "برجر", nameEn: "Burgers", emoji: "🍔", visible: true },
     { id: "c2", name: "بيتزا", nameEn: "Pizza", emoji: "🍕", visible: true },
@@ -126,7 +122,7 @@ export const DEFAULT_DATA: MenuData = {
       descriptionEn: "Marinated chicken breast with hot sauce and jalapenos",
       price: 140,
       oldPrice: null,
-      image: "/menu/spicy-chicken-burger.jpg",
+      image: "https://images.unsplash.com/photo-1615297388948-e0437ba0e0a5?w=500&q=80",
       available: true,
       bestseller: false,
       isNew: false,
@@ -158,7 +154,7 @@ export const DEFAULT_DATA: MenuData = {
       descriptionEn: "Imported pepperoni with double mozzarella",
       price: 235,
       oldPrice: null,
-      image: "/menu/pepperoni-pizza.jpg",
+      image: "https://images.unsplash.com/photo-1628840042765-356cda07504c?w=500&q=80",
       available: true,
       bestseller: false,
       isNew: false,
@@ -174,7 +170,7 @@ export const DEFAULT_DATA: MenuData = {
       descriptionEn: "Kebab, kofta and tawook with bread, tahini and salads",
       price: 420,
       oldPrice: 480,
-      image: "/menu/mixed-grill.jpg",
+      image: "https://images.unsplash.com/photo-1544025162-d76694265973?w=500&q=80",
       available: true,
       bestseller: true,
       isNew: false,
@@ -190,7 +186,7 @@ export const DEFAULT_DATA: MenuData = {
       descriptionEn: "Garlic-lemon marinated chicken with toum sauce",
       price: 175,
       oldPrice: null,
-      image: "/menu/shish-tawook.jpg",
+      image: "https://images.unsplash.com/photo-1555939594-58d7cb561ad1?w=500&q=80",
       available: true,
       bestseller: false,
       isNew: false,
@@ -206,7 +202,7 @@ export const DEFAULT_DATA: MenuData = {
       descriptionEn: "Fresh charcoal-grilled lamb chops with roasted potatoes",
       price: 320,
       oldPrice: null,
-      image: "/menu/lamb-chops.jpg",
+      image: "https://images.unsplash.com/photo-1603360946369-dc940ce76d0a?w=500&q=80",
       available: false,
       bestseller: false,
       isNew: true,
@@ -238,7 +234,7 @@ export const DEFAULT_DATA: MenuData = {
       descriptionEn: "Nine panko-breaded rings with ranch dip",
       price: 55,
       oldPrice: null,
-      image: "/menu/onion-rings.jpg",
+      image: "https://images.unsplash.com/photo-1639024471283-03518883512d?w=500&q=80",
       available: true,
       bestseller: false,
       isNew: false,
@@ -270,7 +266,7 @@ export const DEFAULT_DATA: MenuData = {
       descriptionEn: "500ml of freshly squeezed local oranges",
       price: 45,
       oldPrice: null,
-      image: "/menu/orange-juice.jpg",
+      image: "https://images.unsplash.com/photo-1600271886742-f049cd451bba?w=500&q=80",
       available: true,
       bestseller: false,
       isNew: false,
@@ -286,7 +282,7 @@ export const DEFAULT_DATA: MenuData = {
       descriptionEn: "Soft kunafa stuffed with fresh cream",
       price: 90,
       oldPrice: 110,
-      image: "/menu/kunafa.jpg",
+      image: "https://images.unsplash.com/photo-1551024506-0bccd828d307?w=500&q=80",
       available: true,
       bestseller: true,
       isNew: false,
@@ -302,7 +298,7 @@ export const DEFAULT_DATA: MenuData = {
       descriptionEn: "Creamy cheesecake with fresh berry sauce",
       price: 85,
       oldPrice: null,
-      image: "/menu/cheesecake.jpg",
+      image: "https://images.unsplash.com/photo-1533134242443-d4fd215305ad?w=500&q=80",
       available: true,
       bestseller: false,
       isNew: false,
@@ -312,6 +308,5 @@ export const DEFAULT_DATA: MenuData = {
   ],
 };
 
-export const STORAGE_KEY = "royal-menu:data:v1";
+/** مفتاح سلة العميل في متصفح الزائر — السلة بتتحول لطلب مسجّل في الباك إند */
 export const CART_KEY = "royal-menu:cart:v1";
-export const SESSION_KEY = "royal-menu:admin-session:v1";

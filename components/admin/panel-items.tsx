@@ -52,6 +52,9 @@ const emptyDraft = (categoryId: string, order: number): Draft => ({
   isNew: false,
   spicy: 0,
   order,
+  trackStock: true,
+  stock: 10,
+  lowStockThreshold: 2,
 });
 
 export function ItemsPanel({ intent, nonce }: { intent?: string; nonce: number }) {
@@ -261,6 +264,11 @@ export function ItemsPanel({ intent, nonce }: { intent?: string; nonce: number }
                           {item.oldPrice && item.oldPrice > item.price ? (
                             <span className="text-red-400">خصم {Math.round(((item.oldPrice - item.price) / item.oldPrice) * 100)}%</span>
                           ) : null}
+                          {item.trackStock ? (
+                            <span className={cx("font-black", (item.stock ?? 0) <= (item.lowStockThreshold ?? 2) ? "text-amber-400" : "text-emerald-400")}>
+                              المخزون: {item.stock ?? 0}
+                            </span>
+                          ) : null}
                         </p>
                       </div>
 
@@ -402,6 +410,16 @@ function ItemEditor({
           <Field label="الترتيب داخل القسم">
             <NumberInput value={draft.order} onValueChange={(value) => set({ order: value })} />
           </Field>
+          {draft.trackStock ? (
+            <>
+              <Field label="الكمية المتاحة" hint="تقل تلقائياً عند تسجيل الطلب">
+                <NumberInput value={draft.stock ?? 0} onValueChange={(value) => set({ stock: Math.max(0, Math.floor(value)), available: value > 0 })} />
+              </Field>
+              <Field label="تنبيه نقص المخزون" hint="هنبعت تنبيه عند الوصول للعدد ده">
+                <NumberInput value={draft.lowStockThreshold ?? 2} onValueChange={(value) => set({ lowStockThreshold: Math.max(0, Math.floor(value)) })} />
+              </Field>
+            </>
+          ) : null}
         </div>
 
         <ImageField
@@ -412,6 +430,9 @@ function ItemEditor({
         />
 
         <div className="flex flex-wrap items-center gap-2">
+          <CheckboxPill active={!!draft.trackStock} onClick={() => set({ trackStock: !draft.trackStock, stock: draft.stock ?? 10, lowStockThreshold: draft.lowStockThreshold ?? 2 })}>
+            متابعة المخزون 📦
+          </CheckboxPill>
           <CheckboxPill active={draft.available} onClick={() => set({ available: !draft.available })}>
             متاح للطلب
           </CheckboxPill>
