@@ -1,5 +1,7 @@
 import { DEFAULT_DATA } from "./defaults";
 import { normalizeData } from "./normalize";
+import { subscribeRealtime } from "./realtime";
+import { MENU_TABLE, PUBLISHED_SLUG } from "./supabase";
 import { authenticatedFetch } from "./supabase-auth-core";
 import type { Category, MenuData, MenuItem } from "./types";
 
@@ -67,11 +69,39 @@ export async function refreshMenu() {
   }
 }
 
+/**
+ * تحديث لحظي من قاعدة البيانات.
+ * بيتجاهل أي تغيير أثناء تعديل الأدمن المحلي (saveState = dirty) عشان
+ * تعديلات الأدمن ما تتمسحش برسالة قادمة من السيرفر — بتتطبق بعد ما يخلص الحفظ.
+ */
+function refreshFromRemote() {
+  if (state.saveState === "dirty") return;
+  void refreshMenu();
+}
+
+/** فترة آخر حفظ محلي (ms) — بنطنش صدى الحفظ بتاعنا الجاي من الـ Realtime */
+let lastLocalWriteAt = 0;
+/** مدة تجاهل صدى الكتابة المحلية */
+const SELF_ECHO_GUARD_MS = 4000;
+
 function ensureInit() {
   if (initialized || typeof window === "undefined") return;
   initialized = true;
   void refreshMenu();
-  window.addEventListener("focus", () => void refreshMenu());
+  window.addEventListener("focus", refreshFromRemote);
+
+  // تحديث لحظي فوري: أي تعديل من الأدمن أو خصم مخزون من طلب جديد يوصل لكل الأجهزة
+  subscribeRealtime(
+    "realtime:menu",
+    [{ table: MENU_TABLE, event: "UPDATE", filter: `slug=eq.${PUBLISHED_SLUG}` }],
+    () => {
+      if (Date.now() - lastLocalWriteAt < SELF_ECHO_GUARD_MS) return;
+      refreshFromRemote();
+    },
+  );
+
+  // شبكة أمان لو الـ Realtime مش متاح (جداول مش مضافة للـ publication)
+  window.setInterval(refreshFromRemote, 60_000);
 }
 
 export function subscribeMenu(listener: () => void) {
@@ -86,6 +116,7 @@ export function getMenuSnapshot() {
 /** حفظ التعديل في الباك إند (PUT /api/menu بتوكن الأدمن) */
 function schedulePersist(value: MenuData) {
   if (typeof window === "undefined") return;
+  lastLocalWriteAt = Date.now();
   window.clearTimeout(persistTimer);
   persistTimer = window.setTimeout(async () => {
     try {

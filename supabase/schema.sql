@@ -215,3 +215,29 @@ $function$;
 
 revoke all on function public.place_order(jsonb) from public;
 grant execute on function public.place_order(jsonb) to anon, authenticated;
+
+-- ---------------------------------------------------------------
+--  التحديث اللحظي (Supabase Realtime)
+--  أي تغيير في الجداول دي بيوصل فوراً لكل الأجهزة عن طريق WebSocket:
+--   • menu_data           → العملاء يشوفوا تعديلات الأدمن وخصم المخزون فوراً
+--   • orders              → لوحة الأدمن تستلم الطلب الجديد فوراً
+--   • stock_notifications → تنبيه نقص المخزون يظهر فوراً
+--  الصلاحيات بتحكمها RLS حتى على الـ Realtime.
+--  (القطعة دي آمنة للتشغيل أكتر من مرة)
+-- ---------------------------------------------------------------
+do $$
+begin
+  if not exists (select 1 from pg_publication where pubname = 'supabase_realtime') then
+    create publication supabase_realtime;
+  end if;
+end
+$$;
+
+alter publication supabase_realtime add table public.menu_data;
+alter publication supabase_realtime add table public.orders;
+alter publication supabase_realtime add table public.stock_notifications;
+
+-- عشان أحداث التحديث تبعت الصف القديم والجديد كاملين (مطلوب لبعض الفلاتر)
+alter table public.menu_data replica identity full;
+alter table public.orders replica identity full;
+alter table public.stock_notifications replica identity full;
