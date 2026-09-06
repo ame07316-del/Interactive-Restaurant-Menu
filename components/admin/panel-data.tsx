@@ -2,28 +2,27 @@
 
 import { useRef, useState } from "react";
 import {
-  Braces,
+  Cloud,
   Copy,
   Database,
   Download,
-  Info,
-  Link2,
-  Lock,
+  KeyRound,
   QrCode,
   RefreshCw,
+  ShieldCheck,
   Trash2,
   Upload,
 } from "lucide-react";
 import { useMenu } from "@/lib/use-menu";
-import { Button, Field, Panel, Toast, TextInput, Toggle, useToast } from "@/components/ui";
+import { useAdminSession } from "@/lib/use-admin-session";
+import { Button, Panel, TextInput, Toast, useToast } from "@/components/ui";
 
 export function DataPanel() {
-  const { data, patchAdmin, exportJson, importJson, resetToDefaults, storageKb, isCustomized } = useMenu();
-  const admin = data.admin;
+  const { data, exportJson, importJson, resetToDefaults, storageKb, isCustomized, saveError } = useMenu();
+  const { email } = useAdminSession();
   const fileRef = useRef<HTMLInputElement>(null);
   const [paste, setPaste] = useState("");
   const [confirmReset, setConfirmReset] = useState(false);
-  const [showPin, setShowPin] = useState(false);
   const { toast, show } = useToast();
 
   const json = exportJson();
@@ -48,73 +47,58 @@ export function DataPanel() {
     anchor.download = `menu-data-${new Date().toISOString().slice(0, 10)}.json`;
     anchor.click();
     URL.revokeObjectURL(url);
-    show("الملف اتنزّل على جهازك");
+    show("النسخة الاحتياطية اتنزّلت على جهازك");
   };
 
   const readFile = async (file?: File) => {
     if (!file) return;
     const text = await file.text();
     const result = importJson(text);
-    show(result.ok ? "تم استيراد البيانات ✅" : result.error ?? "حصلت مشكلة", result.ok ? "success" : "error");
+    show(result.ok ? "تم الاستيراد وحُفظ في الباك إند ✅" : result.error ?? "حصلت مشكلة", result.ok ? "success" : "error");
     if (fileRef.current) fileRef.current.value = "";
   };
 
   return (
     <div className="space-y-4">
       <Panel
-        title="نشر التعديلات لكل العملاء"
-        description="نسخة احتياطية من بيانات الباك إند للاسترجاع أو النقل"
+        title="نسخة احتياطية من بيانات الباك إند"
+        description="كل الإعدادات والأصناف والمخزون المحفوظة في قاعدة البيانات"
         icon={<Database className="h-4 w-4" />}
       >
-        <ol className="space-y-2.5">
-          {[
-            {
-              title: "صدّر القائمة كملف JSON",
-              body: "اضغط زر «تنزيل JSON» تحت — هيكون عندك نسخة كاملة من كل الإعدادات والأصناف.",
-            },
-            {
-              title: "استبدل البيانات الافتراضية في lib/defaults.ts",
-              body: "افتح الملف، وانسخ الكائن JSON مكان DEFAULT_DATA (version و updatedAt اتوماتيك).",
-            },
-            {
-              title: "ابعت التعديل للريبو واعمل Deploy",
-              body: "git commit + git push → فيرسل هيعيد البناء وكل العملاء هيشوفوا القائمة الجديدة.",
-            },
-          ].map((step, index) => (
-            <li key={step.title} className="flex gap-3 rounded-xl border border-line bg-surface-2/40 p-3">
-              <span className="grid h-6 w-6 shrink-0 place-items-center rounded-lg bg-accent text-[11px] font-black text-accent-contrast">
-                {index + 1}
-              </span>
-              <div>
-                <p className="text-xs font-black">{step.title}</p>
-                <p className="mt-0.5 text-[11px] leading-relaxed text-muted">{step.body}</p>
-              </div>
-            </li>
-          ))}
-        </ol>
-
-        <div className="mt-3 flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <Button size="sm" onClick={download}>
             <Download className="h-3.5 w-3.5" /> تنزيل JSON
           </Button>
-          <Button size="sm" variant="outline" onClick={() => copy(json, "الكوبي كاملة اتنسخت")}>
+          <Button size="sm" variant="outline" onClick={() => copy(json, "النسخة الكاملة اتنسخت")}>
             <Copy className="h-3.5 w-3.5" /> نسخ JSON
-          </Button>
-          <Button size="sm" variant="outline" onClick={() => copy(`export const DEFAULT_DATA = ${json};`, "نسخة الـ TS جاهزة للّصق في lib/defaults.ts")}>
-            <Braces className="h-3.5 w-3.5" /> نسخ كـ TypeScript
           </Button>
           <span className="text-[11px] text-muted">
             {isCustomized ? "متصل بالباك إند" : "جاري الاتصال"} · {storageKb} KB
           </span>
         </div>
+        {saveError ? (
+          <p className="mt-3 rounded-xl border border-red-500/30 bg-red-500/10 p-2.5 text-[11px] leading-relaxed text-red-300">
+            {saveError}
+          </p>
+        ) : (
+          <p className="mt-3 text-[11px] leading-relaxed text-muted">
+            التعديلات بتتحفظ في قاعدة بيانات الموقع أوتوماتيك، وتظهر لكل العملاء فوراً على أي جهاز.
+          </p>
+        )}
       </Panel>
 
       <div className="grid gap-4 lg:grid-cols-2">
-        <Panel title="استيراد قائمة جاهزة" icon={<Upload className="h-4 w-4" />}>
+        <Panel title="استيراد نسخة احتياطية" icon={<Upload className="h-4 w-4" />}>
           <p className="mb-3 text-[11px] leading-relaxed text-muted">
-            اختار ملف JSON صدرته قبل كده وهيحلّ محل بيانات الموقع على السيرفر فوراً.
+            اختار ملف JSON صدرته قبل كده وهيحلّ محل بيانات الموقع في الباك إند فوراً.
           </p>
-          <input ref={fileRef} type="file" accept="application/json,.json" className="hidden" onChange={(event) => readFile(event.target.files?.[0])} />
+          <input
+            ref={fileRef}
+            type="file"
+            accept="application/json,.json"
+            className="hidden"
+            onChange={(event) => readFile(event.target.files?.[0])}
+          />
           <Button size="sm" variant="soft" onClick={() => fileRef.current?.click()}>
             <Upload className="h-3.5 w-3.5" /> اختيار ملف
           </Button>
@@ -128,11 +112,14 @@ export function DataPanel() {
               className="mt-2 w-full rounded-xl border border-line bg-surface-2 p-2.5 font-mono text-[11px] outline-none focus:border-accent"
             />
             <div className="mt-2 flex gap-2">
-              <Button size="sm" onClick={() => {
-                const result = importJson(paste);
-                show(result.ok ? "تم الاستيراد ✅" : result.error ?? "خطأ", result.ok ? "success" : "error");
-                if (result.ok) setPaste("");
-              }}>
+              <Button
+                size="sm"
+                onClick={() => {
+                  const result = importJson(paste);
+                  show(result.ok ? "تم الاستيراد ✅" : result.error ?? "خطأ", result.ok ? "success" : "error");
+                  if (result.ok) setPaste("");
+                }}
+              >
                 استيراد
               </Button>
               <Button size="sm" variant="ghost" onClick={() => setPaste("")}>
@@ -142,45 +129,42 @@ export function DataPanel() {
           </details>
         </Panel>
 
-        <Panel title="حماية لوحة التحكم" description="جلسة آمنة ومحمية من السيرفر" icon={<Lock className="h-4 w-4" />}>
-          <div className="space-y-3">
-            <Toggle
-              label="طلب رقم سري قبل فتح اللوحة"
-              description="لو اطفيته أي حد عنده اللينك يقدر يعدّل — مفيد وقت التطوير بس"
-              checked={admin.lockAdmin}
-              onChange={(checked) => {
-                patchAdmin({ lockAdmin: checked });
-                show(checked ? "اللوحة اتقفلت بالرقم السري" : "اللوحة بقت مفتوحة لأي حد عنده اللينك");
-              }}
-            />
-            <Field label="الرقم السري الاحتياطي" hint="يُستخدم محلياً فقط إذا لم تكن إعدادات Supabase موجودة">
-              <div className="flex items-center gap-2">
-                <TextInput
-                  type={showPin ? "text" : "password"}
-                  value={admin.pin}
-                  onChange={(event) => patchAdmin({ pin: event.target.value })}
-                  inputMode="numeric"
-                />
-                <Button size="sm" variant="ghost" onClick={() => setShowPin((s) => !s)}>
-                  {showPin ? "إخفاء" : "إظهار"}
-                </Button>
-              </div>
-            </Field>
-            <p className="flex gap-2 rounded-xl border border-amber-500/25 bg-amber-500/8 p-2.5 text-[11px] leading-relaxed text-amber-300">
-              <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-              عند إعداد Supabase يتم تجاهل الرقم الاحتياطي، وتُحمى عمليات الأدمن بحساب الإيميل والباسورد وSupabase access token.
+        <Panel
+          title="الدخول والصلاحيات"
+          description="Supabase Auth — حساب واحد للأدمن"
+          icon={<ShieldCheck className="h-4 w-4" />}
+        >
+          <div className="space-y-2.5 text-[11px] leading-relaxed">
+            <div className="flex items-center gap-2 rounded-xl border border-line bg-surface-2/50 px-3 py-2.5">
+              <Cloud className="h-4 w-4 shrink-0 text-accent" />
+              <span className="font-bold">الحساب الحالي:</span>
+              <span dir="ltr" className="font-mono text-muted">
+                {email ?? "—"}
+              </span>
+            </div>
+            <p className="flex gap-2 rounded-xl border border-emerald-500/25 bg-emerald-500/8 p-2.5 text-emerald-300">
+              <KeyRound className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+              الدخول للوحة يتم بالإيميل والباسورد من حساب الأدمن في Supabase (Authentication → Users) فقط.
+            </p>
+            <p className="text-muted">
+              كل طلبات الأدمن (حفظ القائمة، الطلبات، تنبيهات المخزون) بتتحقق من access token على السيرفر،
+              وأي طلب من غير توكن صالح بيرجع 401. إدارة الحسابات (إضافة أو إيقاف مستخدم) من لوحة Supabase.
             </p>
           </div>
         </Panel>
       </div>
 
-      <Panel title="رابط القائمة وكود QR" description="اطبعه وحطه على الطرابيزات أو على استيكر الدليفري" icon={<QrCode className="h-4 w-4" />}>
+      <Panel
+        title="رابط القائمة وكود QR"
+        description="اطبعه وحطه على الطرابيزات أو على استيكر الدليفري"
+        icon={<QrCode className="h-4 w-4" />}
+      >
         <div className="flex flex-wrap items-start gap-4">
           <div className="min-w-56 flex-1 space-y-2">
             <TextInput readOnly value={menuUrl} className="font-mono text-xs" />
             <div className="flex flex-wrap gap-2">
               <Button size="sm" variant="outline" onClick={() => copy(menuUrl, "لينك القائمة اتنسخ")}>
-                <Link2 className="h-3.5 w-3.5" /> نسخ اللينك
+                <Copy className="h-3.5 w-3.5" /> نسخ اللينك
               </Button>
               <a
                 href={qrUrl}
@@ -192,31 +176,30 @@ export function DataPanel() {
               </a>
             </div>
             <p className="text-[11px] leading-relaxed text-muted">
-              الكود بيتولّد من خدمة صورة عامة (qrserver.com) وقت العرض — مفيش أي باك إند في المشروع.
-              بعد الديبلوي غيّر الدومين في المتصفح وهييتولد كود جديد تلقائياً.
+              الكود بيتولّد من خدمة صورة عامة (qrserver.com) وقت العرض، وبيقرأ دومين الموقع الحالي تلقائياً.
             </p>
           </div>
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src={qrUrl}
-            alt="QR code للقائمة"
-            className="h-28 w-28 rounded-xl border border-line bg-white p-1.5"
-          />
+          <img src={qrUrl} alt="QR code للقائمة" className="h-28 w-28 rounded-xl border border-line bg-white p-1.5" />
         </div>
       </Panel>
 
-      <Panel title="منطقة الخطر" description="إعادة بيانات الموقع على السيرفر للوضع الافتراضي" icon={<RefreshCw className="h-4 w-4" />}>
+      <Panel
+        title="منطقة الخطر"
+        description="إرجاع بيانات الموقع في الباك إند لبيانات البداية"
+        icon={<RefreshCw className="h-4 w-4" />}
+      >
         <div className="flex flex-wrap items-center gap-2">
           {confirmReset ? (
             <>
-              <span className="text-xs font-bold text-red-400">متأكد؟ بيانات الموقع الحالية على السيرفر هتتمسح.</span>
+              <span className="text-xs font-bold text-red-400">متأكد؟ بيانات الموقع الحالية في قاعدة البيانات هتتمسح.</span>
               <Button
                 size="sm"
                 variant="danger"
                 onClick={() => {
                   resetToDefaults();
                   setConfirmReset(false);
-                  show("رجّعنا كل حاجة للوضع الافتراضي");
+                  show("رجّعنا كل حاجة لبيانات البداية");
                 }}
               >
                 <Trash2 className="h-3.5 w-3.5" /> نعم، امسح
@@ -231,7 +214,9 @@ export function DataPanel() {
             </Button>
           )}
           <span className="text-[11px] text-muted">
-            {isCustomized ? `آخر تحديث: ${new Date(data.updatedAt).toLocaleString("ar-EG")}` : "لسه ما اتعدّلش حاجة على الجهاز ده"}
+            {isCustomized
+              ? `آخر تحديث: ${new Date(data.updatedAt).toLocaleString("ar-EG")}`
+              : "جاري الاتصال بقاعدة البيانات"}
           </span>
         </div>
       </Panel>

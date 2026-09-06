@@ -1,9 +1,9 @@
 import type { MenuData } from "./types";
 
 /**
- * البيانات الافتراضية للموقع.
- * دي نقطة البداية الوحيدة — أي تعديل من لوحة التحكم بيتخزّن في متصفح الجهاز،
- * وممكن تصديره كـ JSON وتستبدل الملف ده عشان يبقى هو الافتراضي للجميع بعد الديبلوي.
+ * بيانات البداية (seed) اللي بتتحط في قاعدة البيانات أول مرة بس.
+ * بعد كده مصدر الحقيقة هو الباك إند: أي تعديل من لوحة التحكم بيتحفظ في
+ * جدول Supabase (أو ملف التطوير المحلي) ومنه بيقرأ كل العملاء.
  */
 export const DEFAULT_DATA: MenuData = {
   version: 1,
@@ -71,10 +71,6 @@ export const DEFAULT_DATA: MenuData = {
       "📝 *ملاحظات:* {notes}",
       "💰 *الإجمالي:* {total}",
     ].join("\n"),
-  },
-  admin: {
-    pin: "1234",
-    lockAdmin: true,
   },
   categories: [
     { id: "c1", name: "برجر", nameEn: "Burgers", emoji: "🍔", visible: true },
@@ -312,7 +308,5 @@ export const DEFAULT_DATA: MenuData = {
   ],
 };
 
-export const STORAGE_KEY = "royal-menu:data:v1";
+/** مفتاح سلة العميل في متصفح الزائر — السلة بتتحول لطلب مسجّل في الباك إند */
 export const CART_KEY = "royal-menu:cart:v1";
-export const SESSION_KEY = "royal-menu:admin-session:v1";
-export const BROADCAST_NAME = "royal-menu:sync";

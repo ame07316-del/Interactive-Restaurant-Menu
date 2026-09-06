@@ -13,7 +13,6 @@ import {
   importJson,
   moveCategory,
   moveItem,
-  patchAdmin,
   patchBrand,
   patchCommerce,
   patchContact,
@@ -25,7 +24,7 @@ import {
   updateMenu,
 } from "./menu-store-core";
 
-/** كل مكونات الموقع بتقرا البيانات من هنا — والتعديلات بتتحفظ أوتوماتيك */
+/** كل مكونات الموقع بتقرا البيانات من الباك إند عن طريق هنا — والتعديلات بتتحفظ أوتوماتيك */
 export function useMenu() {
   const state = useSyncExternalStore(subscribeMenu, getMenuSnapshot, () => MENU_SERVER_STATE);
   return {
@@ -34,7 +33,6 @@ export function useMenu() {
     patchBrand,
     patchContact,
     patchCommerce,
-    patchAdmin,
     addCategory,
     updateCategory,
     deleteCategory,

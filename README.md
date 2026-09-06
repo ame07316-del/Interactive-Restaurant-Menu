@@ -1,55 +1,83 @@
-# 🍔 قائمة مطعم متكاملة — Frontend + Backend
+# 🍔 Interactive Restaurant Menu — Full Stack (Next.js + Supabase)
 
-تطبيق مطعم عربي مبني بـ **Next.js 16 + TypeScript**، يشمل واجهة العملاء ولوحة تحكم وباك إند حقيقي لحفظ القائمة والطلبات والمخزون.
+تطبيق مطعم عربي **Full Stack**: واجهة عملاء RTL + لوحة تحكم + باك إند حقيقي يحفظ
+القائمة والطلبات والمخزون في قاعدة بيانات Supabase (Postgres).
 
 ## المميزات
 
-- قائمة RTL سريعة ومتجاوبة، بحث وأقسام وسلة طلبات وإرسال الطلب على واتساب.
-- لوحة تحكم بدخول **Supabase Auth بالإيميل والباسورد** لتعديل الهوية، الأقسام، الأصناف، الأسعار، الخصومات والعروض.
-- كل API خاص بالأدمن يتحقق من Supabase access token على السيرفر؛ والـPIN مجرد fallback محلي عند غياب إعدادات Supabase.
-- مخزون مستقل لكل صنف: كمية حالية وحد تنبيه قابل للتعديل.
-- تسجيل الطلب في الباك إند أولاً، ثم خصم الكميات آلياً وفتح رسالة واتساب برقم الطلب.
-- عند وصول المخزون إلى 2 (أو الحد الذي يحدده الأدمن) يظهر تنبيه في لوحة التحكم، ويمكن إرساله إلى أي خدمة خارجية عبر `LOW_STOCK_WEBHOOK_URL`.
-- سجل للطلبات والتنبيهات محفوظ في قاعدة البيانات.
-- حفظ لحظي مركزي: تعديل الأدمن يظهر لكل الأجهزة، وليس في متصفح واحد فقط.
+- قائمة RTL سريعة ومتجاوبة: بحث، أقسام، سلة، وإرسال الطلب على واتساب برقم طلب حقيقي.
+- **دخول لوحة التحكم حصرياً بـ Supabase Auth (إيميل + باسورد)** من الحساب الموجود في
+  `Authentication → Users`. مفيش أي دخول محلي أو رقم سري في المشروع.
+- كل API خاص بالأدمن بيتحقق من **Supabase access token على السيرفر** — أي طلب من غير توكن صالح بيرجع `401`.
+- **كمية (مخزون) لكل صنف** مع حد تنبيه قابل للتعديل، و**خصم تلقائي** للكمية عند تسجيل الطلب.
+- **تنبيه نقص المخزون** داخل لوحة التحكم عند وصول الكمية للحد (الافتراضي **2**) + إرساله لأي خدمة خارجية عبر webhook.
+- سجل الطلبات والتنبيهات محفوظ في قاعدة البيانات ويظهر في لوحة التحكم.
+- حفظ لحظي مركزي: تعديل الأدمن يظهر لكل العملاء على كل الأجهزة.
 
-## الباك إند وقاعدة البيانات
+## الباك إند
 
-المسارات الأساسية:
+| المسار | الوصف | الصلاحيات |
+| --- | --- | --- |
+| `GET /api/menu` | قراءة القائمة | عام |
+| `PUT /api/menu` | حفظ القائمة | أدمن (Supabase token) |
+| `POST /api/orders` | تسجيل طلب + خصم المخزون + إنشاء تنبيه النقص | عام |
+| `GET /api/admin/overview` | الطلبات + تنبيهات المخزون + حالة التخزين | أدمن (Supabase token) |
+| `PATCH /api/admin/overview` | تحديد التنبيهات كمقروءة | أدمن (Supabase token) |
+| `GET /api/admin/session` | التحقق من جلسة الأدمن على السيرفر | أدمن (Supabase token) |
 
-- `GET/PUT /api/menu` — قراءة القائمة وتعديلها (التعديل للأدمن فقط).
-- `POST /api/orders` — تسجيل الطلب والتحقق من الكمية وخصم المخزون.
-- `/api/admin/login` و`/api/admin/session` — مصادقة الأدمن.
-- `/api/admin/overview` — الطلبات وتنبيهات المخزون.
+التحقق من التوكن بيتم في `lib/server-auth.ts` بمخاطبة `SUPABASE_URL/auth/v1/user`،
+والبيانات بتتحفظ عن طريق `lib/server-database.ts`.
 
-محلياً تُحفظ البيانات في `data/restaurant.json`. في الإنتاج استخدم **Upstash Redis** بوضع متغيرات البيئة الموجودة في `.env.example`، لكي تكون البيانات دائمة على Vercel والمنصات Serverless.
+## قاعدة البيانات
 
-## التشغيل
+نفّذ [`supabase/schema.sql`](supabase/schema.sql) مرة واحدة في Supabase → SQL Editor.
+الملف بينشئ:
 
-```bash
-npm install
-cp .env.example .env.local
-npm run dev
-```
+- `menu_data` — القائمة (قراءة عامة، كتابة للأدمن).
+- `orders` — الطلبات (قراءة للأدمن).
+- `stock_notifications` — تنبيهات نقص المخزون.
+- `place_order(payload jsonb)` — دالة `SECURITY DEFINER` بتسجّل الطلب وتخصم المخزون
+  بشكل ذرّي (`SELECT … FOR UPDATE`) وتنشئ تنبيه النقص.
 
-- الموقع: `http://localhost:3000`
-- لوحة التحكم: `http://localhost:3000/admin`
-- عند إعداد Supabase: استخدم الإيميل والباسورد الخاصين باليوزر الموجود في Supabase Authentication.
-- بدون إعدادات Supabase محلياً فقط: الرقم الاحتياطي الافتراضي `1234`.
+> لحد ما تنفّذ الملف، الموقع بيشتغل على ملف مؤقت للتطوير، وتظهر لك لافتة حمراء في لوحة
+> التحكم تطلب تنفيذ الـ schema.
 
-## متغيرات الإنتاج
+## متغيرات البيئة
 
 ```env
 NEXT_PUBLIC_SUPABASE_URL=https://YOUR-PROJECT.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=sb_publishable_...
-ADMIN_PIN=change-me # fallback محلي فقط
-SESSION_SECRET=a-long-random-secret
-UPSTASH_REDIS_REST_URL=https://...
-UPSTASH_REDIS_REST_TOKEN=...
-LOW_STOCK_WEBHOOK_URL=https://... # اختياري
+LOW_STOCK_WEBHOOK_URL=https://...   # اختياري
 ```
 
-الـ webhook يستقبل JSON يحتوي `type: low_stock` وقائمة الأصناف التي وصلت إلى حد التنبيه، ويمكن ربطه بـ WhatsApp Business API أو Make أو n8n أو Slack.
+القيم متظبطة في **Vercel → Project Settings → Environment Variables**.
+المشروع بيستخدم مفتاح `anon` العام فقط — **مفيش `service_role` في أي مكان في الكود**.
+
+### شكل رسالة الـ webhook
+
+```json
+{
+  "type": "low_stock",
+  "sentAt": "2026-09-06T12:00:00.000Z",
+  "count": 1,
+  "notifications": [
+    { "id": "…", "itemId": "i1", "itemName": "برجر السعادة", "remaining": 2, "threshold": 2 }
+  ]
+}
+```
+
+ممكن تربطه بـ WhatsApp Business API أو Make أو n8n أو Slack.
+
+## التشغيل محلياً
+
+```bash
+npm install
+cp .env.example .env.local   # وحط قيم مشروعك في Supabase
+npm run dev
+```
+
+- الموقع: `http://localhost:3000`
+- لوحة التحكم: `http://localhost:3000/admin` — بالإيميل والباسورد بتوع يوزر Supabase.
 
 ## التحقق
 

@@ -1,52 +1,87 @@
 import "server-only";
 
-import { createHmac, timingSafeEqual } from "node:crypto";
 import type { NextRequest } from "next/server";
 
-export const ADMIN_COOKIE = "restaurant_admin_session";
-const SESSION_VALUE = "restaurant-admin-v1";
-
-const supabaseUrl = () => (process.env.NEXT_PUBLIC_SUPABASE_URL ?? "").trim();
-const supabaseKey = () => (process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "").trim();
-export const isSupabaseAuthConfigured = () => Boolean(supabaseUrl() && supabaseKey());
-
-function secret() {
-  return process.env.SESSION_SECRET || "development-only-change-session-secret";
-}
-
-export function sessionToken() {
-  return `${SESSION_VALUE}.${createHmac("sha256", secret()).update(SESSION_VALUE).digest("hex")}`;
-}
-
-function hasValidFallbackCookie(request: NextRequest) {
-  const actual = request.cookies.get(ADMIN_COOKIE)?.value ?? "";
-  const expected = sessionToken();
-  return actual.length === expected.length && timingSafeEqual(Buffer.from(actual), Buffer.from(expected));
-}
-
 /**
- * في الإنتاج يتحقق من access token مباشرة مع Supabase Auth.
- * لو Supabase غير مُعدّ فقط، يسمح بجلسة PIN المحلية كـ fallback للتطوير.
+ * مصادقة الأدمن على السيرفر.
+ *
+ * الطريقة الوحيدة المقبولة: Supabase Auth access token بيتبعت في هيدر
+ * `Authorization: Bearer <token>` والسيرفر بيتحقق منه مباشرةً عند Supabase.
+ * مفيش كوكيز جلسة محلية، مفيش رقم سري، ومفيش أي fallback —
+ * أي طلب من غير توكن صالح بيرجع 401.
  */
-export async function isAdminRequest(request: NextRequest) {
-  if (!isSupabaseAuthConfigured()) return hasValidFallbackCookie(request);
-  const authorization = request.headers.get("authorization") ?? "";
-  if (!authorization.startsWith("Bearer ")) return false;
+
+const supabaseUrl = () => (process.env.NEXT_PUBLIC_SUPABASE_URL ?? "").trim().replace(/\/$/, "");
+const supabaseKey = () => (process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "").trim();
+
+export function isSupabaseAuthConfigured(): boolean {
+  return Boolean(supabaseUrl() && supabaseKey());
+}
+
+export interface AdminUser {
+  id: string;
+  email: string;
+}
+
+/** نتيجة التحقق: يوزر صالح، أو null، أو سبب الرفض */
+export type AdminCheck =
+  | { ok: true; user: AdminUser }
+  | { ok: false; status: 401 | 503; error: string };
+
+export const MISSING_SERVER_ENV = "إعدادات Supabase ناقصة على السيرفر";
+export const UNAUTHORIZED = "غير مصرّح — سجّل الدخول من لوحة التحكم";
+
+/** كاش قصير للتحقق عشان منضربش Supabase مع كل طلب */
+const TOKEN_CACHE_TTL = 30_000;
+const tokenCache = new Map<string, { user: AdminUser | null; expiresAt: number }>();
+
+export function bearerToken(request: NextRequest): string | null {
+  const header = request.headers.get("authorization") ?? "";
+  if (!header.toLowerCase().startsWith("bearer ")) return null;
+  const token = header.slice(7).trim();
+  return token.length > 20 ? token : null;
+}
+
+async function verifyToken(token: string): Promise<AdminUser | null> {
+  const cached = tokenCache.get(token);
+  if (cached && cached.expiresAt > Date.now()) return cached.user;
+
+  let user: AdminUser | null = null;
   try {
     const response = await fetch(`${supabaseUrl()}/auth/v1/user`, {
-      headers: { authorization, apikey: supabaseKey() },
+      headers: { authorization: `Bearer ${token}`, apikey: supabaseKey() },
       cache: "no-store",
     });
-    if (!response.ok) return false;
-    const user = (await response.json()) as { id?: string; email?: string };
-    return Boolean(user.id && user.email);
+    if (response.ok) {
+      const payload = (await response.json()) as { id?: string; email?: string };
+      if (payload.id && payload.email) user = { id: payload.id, email: payload.email };
+    }
   } catch {
-    return false;
+    // فشل الشبكة = رفض الطلب (fail closed)
+    user = null;
   }
+
+  if (tokenCache.size > 500) tokenCache.clear();
+  tokenCache.set(token, { user, expiresAt: Date.now() + (user ? TOKEN_CACHE_TTL : 2_000) });
+  return user;
 }
 
-export function safePinEquals(actual: string, expected: string) {
-  const a = Buffer.from(actual.trim());
-  const b = Buffer.from(expected.trim());
-  return a.length === b.length && timingSafeEqual(a, b);
+/** التحقق الكامل من توكن الأدمن */
+export async function checkAdmin(token: string | null): Promise<AdminCheck> {
+  if (!isSupabaseAuthConfigured()) return { ok: false, status: 503, error: MISSING_SERVER_ENV };
+  if (!token) return { ok: false, status: 401, error: UNAUTHORIZED };
+  const user = await verifyToken(token);
+  if (!user) return { ok: false, status: 401, error: UNAUTHORIZED };
+  return { ok: true, user };
+}
+
+/** true لو الطلب من أدمن مسجّل دخول بتوكن Supabase صالح */
+export async function isAdminRequest(request: NextRequest): Promise<boolean> {
+  return (await checkAdmin(bearerToken(request))).ok;
+}
+
+/** يوزر الأدمن من الطلب — null لو غير مصرّح */
+export async function requireAdminUser(request: NextRequest): Promise<AdminUser | null> {
+  const result = await checkAdmin(bearerToken(request));
+  return result.ok ? result.user : null;
 }

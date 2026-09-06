@@ -2,11 +2,12 @@ import { createBrowserClient, isSupabaseConfigured } from "./supabase";
 
 /**
  * حالة دخول صاحب المطعم عن طريق Supabase Auth (إيميل + باسورد).
- * لو متغيرات البيئة ناقصة → enabled = false واللوحة بترجع لوضع الرقم السري (demo).
+ * دي الطريقة الوحيدة للدخول للوحة التحكم — مفيش أي دخول محلي أو رقم سري.
+ * كل طلب بيتبعت للـ API المحمي بيتحمل معاه access token والسيرفر بيتحقق منه.
  */
 export interface AuthState {
-  /** Supabase متظبط ومتاح */
-  enabled: boolean;
+  /** متغيرات Supabase موجودة */
+  configured: boolean;
   /** خلّصنا قراءة الجلسة من المتصفح */
   checked: boolean;
   email: string | null;
@@ -16,13 +17,16 @@ export interface AuthState {
 }
 
 export const AUTH_SERVER_STATE: AuthState = {
-  enabled: false,
+  configured: false,
   checked: false,
   email: null,
   userId: null,
   busy: false,
   error: null,
 };
+
+export const MISSING_ENV_MESSAGE =
+  "إعدادات Supabase غير موجودة على السيرفر — أضف NEXT_PUBLIC_SUPABASE_URL و NEXT_PUBLIC_SUPABASE_ANON_KEY";
 
 let state: AuthState = AUTH_SERVER_STATE;
 let initialized = false;
@@ -42,18 +46,17 @@ function ensureInit() {
   initialized = true;
 
   if (!isSupabaseConfigured()) {
-    // وضع الديمو: مفيش Supabase — اللوحة هتستعمل الرقم السري
-    set({ enabled: false, checked: true });
+    set({ configured: false, checked: true, error: MISSING_ENV_MESSAGE });
     return;
   }
 
   const client = createBrowserClient();
   if (!client) {
-    set({ enabled: false, checked: true });
+    set({ configured: false, checked: true, error: MISSING_ENV_MESSAGE });
     return;
   }
 
-  set({ enabled: true });
+  set({ configured: true });
 
   client.auth
     .getSession()
@@ -65,7 +68,6 @@ function ensureInit() {
       });
     })
     .catch(() => {
-      // النت مقطوع مثلاً — بنكمل شغل بالكاش المحلي
       set({ checked: true });
     });
 
@@ -90,15 +92,15 @@ export function getAuthSnapshot(): AuthState {
   return state;
 }
 
-/** true لو نقدر نكتب على Supabase دلوقتي (متظبط + مسجّل دخول) */
-export function canWriteToCloud(): boolean {
-  return state.enabled && Boolean(state.userId);
+/** true لو مسجّل دخول دلوقتي */
+export function isAuthenticated(): boolean {
+  return state.configured && Boolean(state.userId);
 }
 
 export async function signInWithPassword(email: string, password: string): Promise<boolean> {
   const client = createBrowserClient();
   if (!client) {
-    set({ error: "Supabase مش متظبط على النسخة دي" });
+    set({ error: MISSING_ENV_MESSAGE });
     return false;
   }
   set({ busy: true, error: null });
@@ -134,7 +136,7 @@ export async function signOutFromCloud() {
   try {
     await client.auth.signOut();
   } catch {
-    /* حتى لو الشبكة فشلت بنمسح الحالة محلياً */
+    /* حتى لو الشبكة فشلت بنمسح الحالة من المتصفح */
   }
   set({ busy: false, email: null, userId: null, error: null });
 }
@@ -143,10 +145,17 @@ export function clearAuthError() {
   if (state.error) set({ error: null });
 }
 
-/** يضيف access token الحالي لطلبات API المحمية. */
-export async function authenticatedFetch(input: RequestInfo | URL, init: RequestInit = {}) {
+/** access token الحالي — بيتحط في Authorization لكل طلبات الأدمن */
+export async function currentAccessToken(): Promise<string | null> {
   const client = createBrowserClient();
-  const token = client ? (await client.auth.getSession()).data.session?.access_token : null;
+  if (!client) return null;
+  const { data } = await client.auth.getSession();
+  return data.session?.access_token ?? null;
+}
+
+/** fetch بيضيف access token الحالي للطلبات المحمية */
+export async function authenticatedFetch(input: RequestInfo | URL, init: RequestInit = {}) {
+  const token = await currentAccessToken();
   const headers = new Headers(init.headers);
   if (token) headers.set("authorization", `Bearer ${token}`);
   return fetch(input, { ...init, headers });
@@ -157,6 +166,6 @@ function translateAuthError(message: string): string {
   if (text.includes("invalid login")) return "الإيميل أو الباسورد غلط";
   if (text.includes("email not confirmed")) return "الإيميل لسه متأكدش — افتح رسالة التأكيد";
   if (text.includes("rate limit") || text.includes("too many")) return "محاولات كتير — استنى شوية وجرّب تاني";
-  if (text.includes("failed to fetch") || text.includes("network")) return "مفيش اتصال بالسيرفر — الشغل هيفضل محلي";
+  if (text.includes("failed to fetch") || text.includes("network")) return "مفيش اتصال بسيرفر المصادقة";
   return message;
 }

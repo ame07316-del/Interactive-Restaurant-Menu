@@ -1,43 +1,98 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ArrowUpRight,
+  Bell,
   CircleCheck,
   Database,
+  FolderTree,
+  Package,
   Plus,
   Receipt,
   TriangleAlert,
   UtensilsCrossed,
-  FolderTree,
   Wallet,
-  Bell,
-  Package,
 } from "lucide-react";
 import { useMenu } from "@/lib/use-menu";
 import { Badge, Button, Panel } from "@/components/ui";
 import { cx } from "@/lib/cx";
 import { authenticatedFetch } from "@/lib/supabase-auth-core";
+import type { AdminOverview, SavedOrder, StockNotification } from "@/lib/types";
+
+interface OverviewState {
+  orders: SavedOrder[];
+  notifications: StockNotification[];
+  storage: { driver: "supabase" | "file"; persistent: boolean };
+}
+
+const EMPTY_OVERVIEW: OverviewState = {
+  orders: [],
+  notifications: [],
+  storage: { driver: "file", persistent: false },
+};
+
+const ORDER_TYPE_LABEL: Record<string, string> = {
+  delivery: "دليفري",
+  takeaway: "تيك أواي",
+  dinein: "محلي",
+};
 
 export function DashboardPanel({ onJump }: { onJump: (tab: string, payload?: string) => void }) {
   const { data, isCustomized, storageKb } = useMenu();
-  const { items, categories, brand, contact, commerce, admin } = data;
+  const { items, categories, brand, contact, commerce } = data;
   const supabaseAuth = Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
-  const [overview, setOverview] = useState<{ orders: Array<{ id: string; total: number; createdAt: string }>; notifications: Array<{ id: string; itemName: string; remaining: number; read: boolean }> }>({ orders: [], notifications: [] });
+  const [overview, setOverview] = useState<OverviewState>(EMPTY_OVERVIEW);
+  const [overviewError, setOverviewError] = useState<string | null>(null);
+
+  const loadOverview = useCallback(async () => {
+    try {
+      const response = await authenticatedFetch("/api/admin/overview", { cache: "no-store" });
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => null)) as { error?: string } | null;
+        setOverviewError(payload?.error ?? "تعذّر قراءة بيانات اللوحة");
+        return;
+      }
+      const result = (await response.json()) as AdminOverview;
+      setOverview({
+        orders: result.orders ?? [],
+        notifications: result.notifications ?? [],
+        storage: result.storage ?? EMPTY_OVERVIEW.storage,
+      });
+      setOverviewError(null);
+    } catch {
+      setOverviewError("تعذّر الاتصال بالباك إند");
+    }
+  }, []);
 
   useEffect(() => {
-    authenticatedFetch("/api/admin/overview", { cache: "no-store" }).then((response) => response.ok ? response.json() : overview).then(setOverview).catch(() => undefined);
-    // تحميل مرة عند فتح لوحة المتابعة
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    // متابعة لحظية: أي طلب جديد أو تنبيه مخزون يظهر في اللوحة من غير ريفريش
+    const timer = window.setInterval(() => void loadOverview(), 15_000);
+    const kick = window.setTimeout(() => void loadOverview(), 0);
+    return () => {
+      window.clearInterval(timer);
+      window.clearTimeout(kick);
+    };
+  }, [loadOverview]);
+
+  const unread = useMemo(
+    () => overview.notifications.filter((notification) => !notification.read),
+    [overview.notifications],
+  );
+
+  const lowStockItems = useMemo(
+    () =>
+      items
+        .filter((item) => item.trackStock && (item.stock ?? 0) <= (item.lowStockThreshold ?? 2))
+        .sort((a, b) => (a.stock ?? 0) - (b.stock ?? 0)),
+    [items],
+  );
 
   const stats = useMemo(() => {
     const soldOut = items.filter((item) => !item.available).length;
     const offers = items.filter((item) => item.oldPrice && item.oldPrice > item.price).length;
     const noImage = items.filter((item) => !item.image?.trim()).length;
-    const avg = items.length
-      ? Math.round(items.reduce((sum, item) => sum + item.price, 0) / items.length)
-      : 0;
+    const avg = items.length ? Math.round(items.reduce((sum, item) => sum + item.price, 0) / items.length) : 0;
     return { soldOut, offers, noImage, avg };
   }, [items]);
 
@@ -59,7 +114,7 @@ export function DashboardPanel({ onJump }: { onJump: (tab: string, payload?: str
     {
       ok: categories.some((category) => category.visible),
       label: "الأقسام الظاهرة",
-      fix: "كل الأقسام مقفلة من الظهور",
+      fix: "كل الأقسام مقفولة من الظهور",
       tab: "categories",
     },
     {
@@ -75,9 +130,15 @@ export function DashboardPanel({ onJump }: { onJump: (tab: string, payload?: str
       tab: "ordering",
     },
     {
-      ok: supabaseAuth || admin.lockAdmin,
-      label: "حماية الأدمين",
-      fix: "أضف إعدادات Supabase Auth أو فعّل الرقم السري الاحتياطي",
+      ok: supabaseAuth,
+      label: "مصادقة الأدمن",
+      fix: "أضف NEXT_PUBLIC_SUPABASE_URL و NEXT_PUBLIC_SUPABASE_ANON_KEY",
+      tab: "data",
+    },
+    {
+      ok: overview.storage.persistent,
+      label: "قاعدة البيانات",
+      fix: "التخزين الحالي مؤقت — نفّذ supabase/schema.sql في Supabase",
       tab: "data",
     },
   ];
@@ -87,23 +148,87 @@ export function DashboardPanel({ onJump }: { onJump: (tab: string, payload?: str
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Stat icon={<UtensilsCrossed className="h-4 w-4" />} label="الأصناف" value={String(items.length)} hint={`${stats.soldOut} خلصت`} />
         <Stat icon={<FolderTree className="h-4 w-4" />} label="الأقسام" value={String(categories.length)} hint={`${categories.filter((c) => c.visible).length} ظاهر`} />
-        <Stat icon={<Receipt className="h-4 w-4" />} label="عروض وخصومات" value={String(stats.offers)} hint="سعر قبل الخصم" />
+        <Stat icon={<Receipt className="h-4 w-4" />} label="طلبات مسجّلة" value={String(overview.orders.length)} hint="محفوظة في الباك إند" />
         <Stat icon={<Wallet className="h-4 w-4" />} label="متوسط السعر" value={`${stats.avg} ${commerce.currency}`} hint="لكل صنف" />
       </div>
 
-      {overview.notifications.filter((notification) => !notification.read).length > 0 ? (
+      {!overview.storage.persistent ? (
+        <div className="rounded-card border border-red-500/30 bg-red-500/10 p-3 text-[11px] leading-relaxed text-red-300">
+          <p className="font-black">قاعدة البيانات الحالية تخزين مؤقت</p>
+          <p className="mt-1">
+            البيانات بتتحفظ في ملف مؤقت على السيرفر وهتضيع مع كل إعادة تشغيل. عشان الحفظ يبقى دائم على Vercel
+            نفّذ محتوى <span dir="ltr" className="font-mono">supabase/schema.sql</span> مرة واحدة في Supabase → SQL Editor،
+            وبعدها كل حاجة (القائمة، الطلبات، المخزون) هتتحفظ في Postgres.
+          </p>
+        </div>
+      ) : null}
+
+      {overviewError ? (
+        <div className="rounded-card border border-amber-500/30 bg-amber-500/10 p-3 text-[11px] font-bold text-amber-300">
+          {overviewError}
+        </div>
+      ) : null}
+
+      {unread.length > 0 ? (
         <Panel
-          title="تنبيهات المخزون"
-          description="رسالة تلقائية عند وصول أي صنف للحد اللي حددته"
+          title={`تنبيهات نقص المخزون (${unread.length})`}
+          description="تُنشأ تلقائياً عند وصول الكمية للحد المحدد (الافتراضي 2)"
           icon={<Bell className="h-4 w-4" />}
-          actions={<Button size="sm" variant="outline" onClick={async () => { await authenticatedFetch("/api/admin/overview", { method: "PATCH" }); setOverview((current) => ({ ...current, notifications: current.notifications.map((row) => ({ ...row, read: true })) })); }}>تحديد كمقروء</Button>}
+          actions={
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={async () => {
+                await authenticatedFetch("/api/admin/overview", { method: "PATCH" });
+                setOverview((current) => ({
+                  ...current,
+                  notifications: current.notifications.map((row) => ({ ...row, read: true })),
+                }));
+              }}
+            >
+              تحديد كمقروء
+            </Button>
+          }
         >
           <div className="grid gap-2 sm:grid-cols-2">
-            {overview.notifications.filter((notification) => !notification.read).slice(0, 6).map((notification) => (
+            {unread.slice(0, 6).map((notification) => (
               <div key={notification.id} className="flex items-center gap-3 rounded-xl border border-amber-500/30 bg-amber-500/10 p-3">
                 <Package className="h-5 w-5 shrink-0 text-amber-400" />
-                <div><p className="text-xs font-black">{notification.itemName}</p><p className="text-[11px] text-amber-300">متبقي {notification.remaining} فقط — راجع المخزون</p></div>
+                <div>
+                  <p className="text-xs font-black">{notification.itemName}</p>
+                  <p className="text-[11px] text-amber-300">
+                    متبقي {notification.remaining} (حد التنبيه {notification.threshold}) — راجع المخزون
+                  </p>
+                </div>
               </div>
+            ))}
+          </div>
+          <p className="mt-2 text-[11px] text-muted">
+            التنبيه نفسه بيتبعت للـ webhook لو <span dir="ltr" className="font-mono">LOW_STOCK_WEBHOOK_URL</span> متظبط.
+          </p>
+        </Panel>
+      ) : null}
+
+      {lowStockItems.length > 0 ? (
+        <Panel
+          title="أصناف قربت تخلص"
+          description="الكمية الحالية مقارنة بحد التنبيه"
+          icon={<Package className="h-4 w-4" />}
+          actions={<Button size="sm" variant="outline" onClick={() => onJump("items")}>تعديل الكميات</Button>}
+        >
+          <div className="flex flex-wrap gap-2">
+            {lowStockItems.slice(0, 12).map((item) => (
+              <span
+                key={item.id}
+                className={cx(
+                  "rounded-xl border px-2.5 py-1.5 text-[11px] font-bold",
+                  (item.stock ?? 0) === 0
+                    ? "border-red-500/30 bg-red-500/10 text-red-300"
+                    : "border-amber-500/30 bg-amber-500/10 text-amber-300",
+                )}
+              >
+                {item.name} — {item.stock ?? 0}
+              </span>
             ))}
           </div>
         </Panel>
@@ -132,10 +257,7 @@ export function DashboardPanel({ onJump }: { onJump: (tab: string, payload?: str
                   </span>
                 </span>
                 {!check.ok ? (
-                  <button
-                    onClick={() => onJump(check.tab)}
-                    className="shrink-0 text-[11px] font-black text-accent hover:underline"
-                  >
+                  <button onClick={() => onJump(check.tab)} className="shrink-0 text-[11px] font-black text-accent hover:underline">
                     عدّل <ArrowUpRight className="inline h-3 w-3" />
                   </button>
                 ) : null}
@@ -145,17 +267,44 @@ export function DashboardPanel({ onJump }: { onJump: (tab: string, payload?: str
         </Panel>
 
         <div className="space-y-4">
+          <Panel title="آخر الطلبات" description="مسجّلة في الباك إند مع خصم المخزون" icon={<Receipt className="h-4 w-4" />}>
+            {overview.orders.length === 0 ? (
+              <p className="rounded-xl border border-line bg-surface-2/40 p-3 text-[11px] text-muted">
+                لسه مفيش طلبات — أول طلب من الموقع هيتسجّل هنا فوراً.
+              </p>
+            ) : (
+              <ul className="space-y-2">
+                {overview.orders.slice(0, 5).map((order) => (
+                  <li key={order.id} className="rounded-xl border border-line bg-surface-2/40 p-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <span dir="ltr" className="font-mono text-[11px] font-black text-accent">
+                        {order.id}
+                      </span>
+                      <span className="text-[11px] font-black">
+                        {order.total} {commerce.currency}
+                      </span>
+                    </div>
+                    <p className="mt-1 text-[11px] text-muted">
+                      {order.customer?.name || "عميل"} · {ORDER_TYPE_LABEL[order.orderType] ?? order.orderType} ·{" "}
+                      {new Date(order.createdAt).toLocaleString("ar-EG")}
+                    </p>
+                    <p className="mt-0.5 text-[11px] text-muted">
+                      {order.lines?.map((line) => `${line.name} ×${line.quantity}`).join("، ")}
+                    </p>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </Panel>
+
           <Panel title="حفظ سحابي" description="أي تعديل بيتخزن أوتوماتيك في الباك إند" icon={<Database className="h-4 w-4" />}>
             <div className="space-y-3 text-xs">
               <div className="flex items-center justify-between rounded-xl border border-line bg-surface-2/50 px-3 py-2.5">
-                <span className="text-muted">التخزين المستخدم</span>
+                <span className="text-muted">حجم بيانات القائمة</span>
                 <span className="font-black">{storageKb} KB</span>
               </div>
               <div className="h-1.5 overflow-hidden rounded-full bg-surface-2">
-                <div
-                  className="h-full rounded-full bg-accent transition-all"
-                  style={{ width: `${Math.min(100, (storageKb / 5000) * 100)}%` }}
-                />
+                <div className="h-full rounded-full bg-accent transition-all" style={{ width: `${Math.min(100, (storageKb / 5000) * 100)}%` }} />
               </div>
               <p className="text-[11px] leading-relaxed text-muted">
                 {isCustomized
@@ -195,17 +344,7 @@ export function DashboardPanel({ onJump }: { onJump: (tab: string, payload?: str
   );
 }
 
-function Stat({
-  icon,
-  label,
-  value,
-  hint,
-}: {
-  icon: React.ReactNode;
-  label: string;
-  value: string;
-  hint?: string;
-}) {
+function Stat({ icon, label, value, hint }: { icon: React.ReactNode; label: string; value: string; hint?: string }) {
   return (
     <div className="rounded-card border border-line bg-surface p-3.5">
       <span className="mb-2 flex items-center gap-1.5 text-[11px] font-bold text-muted">
@@ -220,10 +359,7 @@ function Stat({
 
 function QuickAction({ label, hint, onClick }: { label: string; hint: string; onClick: () => void }) {
   return (
-    <button
-      onClick={onClick}
-      className="rounded-xl border border-line bg-surface-2/50 p-3 text-start transition hover:border-accent/50"
-    >
+    <button onClick={onClick} className="rounded-xl border border-line bg-surface-2/50 p-3 text-start transition hover:border-accent/50">
       <p className="text-xs font-black">{label}</p>
       <p className="mt-0.5 text-[11px] text-muted">{hint}</p>
     </button>

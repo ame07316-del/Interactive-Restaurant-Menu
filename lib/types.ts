@@ -101,21 +101,41 @@ export interface CommerceSettings {
   orderTemplate: string;
 }
 
-export interface AdminSettings {
-  /** رقم سري احتياطي للتطوير عندما لا تكون Supabase Auth مُعدّة */
-  pin: string;
-  lockAdmin: boolean;
-}
-
 export interface MenuData {
   version: number;
   updatedAt: string;
   brand: BrandSettings;
   contact: ContactSettings;
   commerce: CommerceSettings;
-  admin: AdminSettings;
   categories: Category[];
   items: MenuItem[];
+}
+
+/** طلب مسجّل في الباك إند بعد خصم المخزون */
+export interface SavedOrder {
+  id: string;
+  createdAt: string;
+  customer: { name: string; phone: string; address: string; table: string; notes: string };
+  orderType: OrderType;
+  lines: Array<{ itemId: string; name: string; quantity: number; unitPrice: number }>;
+  total: number;
+}
+
+/** تنبيه نقص مخزون — يظهر في لوحة التحكم ويمكن إرساله للـ webhook */
+export interface StockNotification {
+  id: string;
+  itemId: string;
+  itemName: string;
+  remaining: number;
+  threshold: number;
+  createdAt: string;
+  read: boolean;
+}
+
+export interface AdminOverview {
+  orders: SavedOrder[];
+  notifications: StockNotification[];
+  storage: { driver: "supabase" | "file"; persistent: boolean };
 }
 
 /** السلة بتخزّن المعرّف والكمية فقط، وكل حاجة تانية بتتاشتق من البيانات الحالية */
