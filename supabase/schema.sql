@@ -103,9 +103,18 @@ declare
   v_order_id      text;
   v_now           timestamptz := now();
   v_now_iso       text;
+  v_subtotal      numeric := 0;
+  v_delivery      numeric := 0;
+  v_service       numeric := 0;
+  v_total         numeric := 0;
+  v_commerce      jsonb;
+  v_order_type    text;
 begin
   if jsonb_typeof(v_lines) <> 'array' or jsonb_array_length(v_lines) = 0 then
     raise exception 'السلة فارغة' using errcode = '22023';
+  end if;
+  if jsonb_array_length(v_lines) > 50 then
+    raise exception 'عدد الأصناف كبير جداً (الحد 50)' using errcode = '22023';
   end if;
 
   v_now_iso := to_char(v_now at time zone 'utc', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"');
@@ -121,8 +130,10 @@ begin
 
   for v_line in select * from jsonb_array_elements(v_lines)
   loop
-    v_item_id  := v_line ->> 'itemId';
+    v_item_id  := btrim(coalesce(v_line ->> 'itemId',''));
+    if v_item_id = '' then raise exception 'معرف الصنف مفقود' using errcode='22023'; end if;
     v_quantity := greatest(1, floor(coalesce((v_line ->> 'quantity')::numeric, 1))::integer);
+    if v_quantity > 50 then raise exception 'الحد الأقصى 50 قطعة للصنف الواحد' using errcode='22023'; end if;
 
     select elem into v_item
       from jsonb_array_elements(v_menu -> 'items') as elem
@@ -185,21 +196,41 @@ begin
     );
   end loop;
 
+  -- حساب الإجمالي على السيرفر (مكافحة تلاعب) - لا نثق في total القادم من العميل
+  v_commerce := v_menu -> 'commerce';
+  v_order_type := coalesce(payload ->> 'orderType', 'delivery');
+  if v_order_type not in ('delivery','takeaway','dinein') then v_order_type := 'delivery'; end if;
+  -- احسب subtotal من الأسطر المحفوظة
+  select coalesce(sum((elem->>'unitPrice')::numeric * (elem->>'quantity')::integer),0) into v_subtotal from jsonb_array_elements(v_order_lines) as elem;
+  v_delivery := 0;
+  if v_order_type = 'delivery' then
+    declare v_free_over numeric := coalesce((v_commerce->>'freeDeliveryOver')::numeric,0);
+            v_fee numeric := coalesce((v_commerce->>'deliveryFee')::numeric,0);
+    begin
+      if v_free_over > 0 and v_subtotal >= v_free_over then v_delivery := 0; else v_delivery := greatest(0, v_fee); end if;
+    end;
+  end if;
+  declare v_pct numeric := coalesce((v_commerce->>'serviceChargePercent')::numeric,0);
+  begin
+    if v_pct > 0 then v_service := round((v_subtotal + v_delivery) * v_pct / 100); else v_service := 0; end if;
+  end;
+  v_total := v_subtotal + v_delivery + v_service;
+
   v_order_id := 'ORD-' || upper(substr(replace(gen_random_uuid()::text, '-', ''), 1, 10));
 
   v_order := jsonb_build_object(
     'id',        v_order_id,
     'createdAt', v_now_iso,
     'customer',  jsonb_build_object(
-      'name',    btrim(coalesce(payload #>> '{customer,name}', '')),
-      'phone',   btrim(coalesce(payload #>> '{customer,phone}', '')),
-      'address', btrim(coalesce(payload #>> '{customer,address}', '')),
-      'table',   btrim(coalesce(payload #>> '{customer,table}', '')),
-      'notes',   btrim(coalesce(payload #>> '{customer,notes}', ''))
+      'name',    left(btrim(coalesce(payload #>> '{customer,name}', '')),100),
+      'phone',   left(btrim(coalesce(payload #>> '{customer,phone}', '')),30),
+      'address', left(btrim(coalesce(payload #>> '{customer,address}', '')),500),
+      'table',   left(btrim(coalesce(payload #>> '{customer,table}', '')),20),
+      'notes',   left(btrim(coalesce(payload #>> '{customer,notes}', '')),500)
     ),
-    'orderType', coalesce(payload ->> 'orderType', 'delivery'),
+    'orderType', v_order_type,
     'lines',     v_order_lines,
-    'total',     coalesce((payload ->> 'total')::numeric, 0)
+    'total',     v_total
   );
 
   insert into public.orders (id, created_at, data) values (v_order_id, v_now, v_order);

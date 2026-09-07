@@ -28,12 +28,19 @@ export function ImageField({
 
   const onPick = async (file?: File) => {
     if (!file) return;
+    // حماية إضافية: حد حجم الملف الأصلي 5MB
+    if (file.size > 5 * 1024 * 1024) {
+      setError("حجم الملف كبير جداً (الحد 5MB)");
+      if (inputRef.current) inputRef.current.value = "";
+      return;
+    }
     setError("");
     setBusy(true);
     try {
       const { dataUrl, kb } = await fileToOptimizedDataUrl(file, { maxSize: 1000 });
       if (kb > MAX_UPLOAD_KB) {
-        setError(`الصورة لسه تقيلة (${kb}KB) — قلّل الدقة أو اختار صورة أصغر`);
+        setError(`الصورة لسه تقيلة (${kb}KB) — الحد ${MAX_UPLOAD_KB}KB، قلّل الدقة أو اختار صورة أصغر`);
+        return;
       }
       onChange(dataUrl);
     } catch (err) {
@@ -88,7 +95,15 @@ export function ImageField({
             <input
               value={value.startsWith("data:") ? "" : value}
               placeholder={value.startsWith("data:") ? "صورة مرفوعة من الجهاز" : "https://…"}
-              onChange={(event) => onChange(event.target.value)}
+              onChange={(event) => {
+                const next = event.target.value.trim();
+                if (next && !next.startsWith("data:") && !/^https?:\/\/.+/i.test(next)) {
+                  setError("الرابط لازم يبدأ بـ https://");
+                  return;
+                }
+                setError("");
+                onChange(event.target.value);
+              }}
               className="w-full rounded-lg border border-line bg-surface-2 px-2.5 py-1.5 text-xs text-ink outline-none focus:border-accent"
             />
           </div>

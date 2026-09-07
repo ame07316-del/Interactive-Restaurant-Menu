@@ -83,12 +83,24 @@ export async function rest<T>(path: string, options: RestOptions = {}): Promise<
 
   if (!response.ok) {
     const error = parsed as { message?: string; code?: string } | null;
+    // لا تسرب تفاصيل داخلية للعميل - سجلها في السيرفر فقط
+    const isNotReady = NOT_READY_CODES.has(error?.code ?? "");
+    const safeMessage = isNotReady
+      ? "قاعدة البيانات غير جاهزة"
+      : response.status >= 500
+        ? "خطأ في الخادم - حاول مرة أخرى"
+        : error?.message && response.status < 500
+          ? error.message
+          : `تعذّر تنفيذ العملية (${response.status})`;
+    if (response.status >= 500 || isNotReady) {
+      console.error(`[supabase] ${path} failed:`, error?.code, error?.message);
+    }
     return {
       ok: false,
       status: response.status,
       data: null,
       code: error?.code ?? `HTTP_${response.status}`,
-      message: error?.message ?? `تعذّر تنفيذ العملية (${response.status})`,
+      message: safeMessage,
     };
   }
 

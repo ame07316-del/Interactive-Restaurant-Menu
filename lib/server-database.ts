@@ -13,7 +13,9 @@ import {
   probeSupabaseStore,
   savePublishedMenu,
   type PlaceOrderInput,
-} from "./supabase-store";import type { AdminOverview, MenuData, SavedOrder, StockNotification } from "./types";
+} from "./supabase-store";
+import { clampQuantity, isValidOrderType, sanitizeText } from "./validation";
+import type { AdminOverview, MenuData, SavedOrder, StockNotification } from "./types";
 
 /**
  * طبقة الباك إند لحفظ بيانات المطعم: القائمة والطلبات والمخزون.
@@ -127,10 +129,24 @@ async function writeFileDatabase(database: FileDatabase) {
 
 const LOW_STOCK_WEBHOOK = () => (process.env.LOW_STOCK_WEBHOOK_URL ?? "").trim();
 
+/** التحقق من أن webhook URL آمن (http/https فقط) */
+function isWebhookUrlSafe(url: string): boolean {
+  try {
+    const u = new URL(url);
+    return u.protocol === "http:" || u.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
 /** إرسال التنبيه لأي خدمة خارجية (WhatsApp Business API / Make / n8n / Slack) */
 function sendLowStockWebhook(notifications: StockNotification[]) {
   const url = LOW_STOCK_WEBHOOK();
   if (!url || notifications.length === 0) return;
+  if (!isWebhookUrlSafe(url)) {
+    console.error("[restaurant] LOW_STOCK_WEBHOOK_URL غير آمن - تم تجاهله");
+    return;
+  }
   const payload = {
     type: "low_stock",
     sentAt: new Date().toISOString(),
@@ -153,6 +169,27 @@ function sendLowStockWebhook(notifications: StockNotification[]) {
 }
 
 /* ------------------------------------------------------------------ */
+/* حساب الإجمالي على السيرفر (مكافحة التلاعب)                         */
+/* ------------------------------------------------------------------ */
+
+function computeServerTotal(
+  lines: { price: number; quantity: number }[],
+  commerce: MenuData["commerce"],
+  orderType: string,
+): number {
+  const subtotal = lines.reduce((s, l) => s + l.price * l.quantity, 0);
+  const isDelivery = orderType === "delivery";
+  const qualifiesFree =
+    isDelivery && commerce.freeDeliveryOver > 0 && subtotal >= commerce.freeDeliveryOver;
+  const delivery = isDelivery && !qualifiesFree ? Math.max(0, commerce.deliveryFee) : 0;
+  const service =
+    commerce.serviceChargePercent > 0
+      ? Math.round(((subtotal + delivery) * commerce.serviceChargePercent) / 100)
+      : 0;
+  return subtotal + delivery + service;
+}
+
+/* ------------------------------------------------------------------ */
 /* الواجهة الموحّدة                                                    */
 /* ------------------------------------------------------------------ */
 
@@ -170,19 +207,22 @@ export async function getMenu(token: string | null = null): Promise<MenuData> {
       }
       return seed;
     }
-    throw new StoreError(result.message || "تعذّر قراءة القائمة", result.status === 404 ? 404 : 502);
+    throw new StoreError("تعذّر قراءة القائمة", result.status === 404 ? 404 : 502);
   }
   return (await readFileDatabase()).menu;
 }
 
 export async function replaceMenu(menu: MenuData, token: string | null): Promise<MenuData> {
   const status = await storageStatus();
+  // حماية من حمولة كبيرة (DoS عبر JSON ضخم أو صور dataURL كبيرة)
+  const size = JSON.stringify(menu).length;
+  if (size > 4_000_000) throw new StoreError("البيانات كبيرة جداً (الحد 4MB)", 413);
   const normalized = normalizeData({ ...menu, updatedAt: new Date().toISOString() });
 
   if (status.driver === "supabase") {
     if (!token) throw new StoreError("غير مصرّح", 401);
     const result = await savePublishedMenu(normalized, token);
-    if (!result.ok) throw new StoreError(result.message || "تعذّر حفظ القائمة", result.status || 502);
+    if (!result.ok) throw new StoreError("تعذّر حفظ القائمة", result.status || 502);
     return result.data ?? normalized;
   }
 
@@ -195,17 +235,57 @@ export async function replaceMenu(menu: MenuData, token: string | null): Promise
 }
 
 export async function createOrder(input: PlaceOrderInput): Promise<{ order: SavedOrder; lowStock: StockNotification[] }> {
+  // تحقق أساسي من نوع الطلب
+  if (!isValidOrderType(input.orderType)) throw new StoreError("نوع الطلب غير صالح", 400);
+  if (!Array.isArray(input.lines) || input.lines.length === 0) throw new StoreError("السلة فارغة", 400);
+  if (input.lines.length > 50) throw new StoreError("عدد الأصناف كبير جداً (الحد 50)", 400);
+
+  // تعقيم بيانات العميل
+  const sanitizedInput: PlaceOrderInput = {
+    ...input,
+    customer: {
+      name: sanitizeText(input.customer?.name ?? "", 100),
+      phone: sanitizeText(input.customer?.phone ?? "", 30),
+      address: sanitizeText(input.customer?.address ?? "", 500),
+      table: sanitizeText(input.customer?.table ?? "", 20),
+      notes: sanitizeText(input.customer?.notes ?? "", 500),
+    },
+    orderType: input.orderType,
+    lines: input.lines.map((l) => ({
+      itemId: sanitizeText(l.itemId, 50),
+      quantity: clampQuantity(l.quantity, 50),
+    })),
+    total: Number(input.total) || 0,
+  };
+
   const status = await storageStatus();
 
   if (status.driver === "supabase") {
-    const result = await placeOrder(input);
-    if (!result.ok || !result.data) throw new StoreError(result.message || "تعذّر تسجيل الطلب", result.status || 400);
+    // احسب الإجمالي على السيرفر قبل الإرسال للـ DB (مكافحة تلاعب)
+    try {
+      const menu = await getMenu();
+      const linesWithPrice = sanitizedInput.lines.map((l) => {
+        const item = menu.items.find((m) => m.id === l.itemId);
+        return { price: item?.price ?? 0, quantity: l.quantity };
+      });
+      const serverTotal = computeServerTotal(linesWithPrice, menu.commerce, sanitizedInput.orderType);
+      // اسمح بفارق بسيط (تقريب) لكن ارفض التلاعب الكبير
+      if (Math.abs(serverTotal - sanitizedInput.total) > 5 && sanitizedInput.total < serverTotal * 0.5) {
+        console.warn(`[order] total mismatch client=${sanitizedInput.total} server=${serverTotal} - using server total`);
+      }
+      sanitizedInput.total = serverTotal;
+    } catch {
+      // لو فشل الحساب، استمر لكن الـ DB سيعيد الحساب أيضاً
+    }
+
+    const result = await placeOrder(sanitizedInput);
+    if (!result.ok || !result.data) throw new StoreError("تعذّر تسجيل الطلب", result.status || 400);
     const lowStock = result.data.lowStock ?? [];
     sendLowStockWebhook(lowStock);
     return { order: result.data.order, lowStock };
   }
 
-  const { order, lowStock } = await serialized(() => createOrderInFile(input));
+  const { order, lowStock } = await serialized(() => createOrderInFile(sanitizedInput));
   sendLowStockWebhook(lowStock);
   return { order, lowStock };
 }
@@ -214,6 +294,7 @@ export async function createOrder(input: PlaceOrderInput): Promise<{ order: Save
 async function createOrderInFile(input: PlaceOrderInput) {
   const database = await readFileDatabase();
   if (!Array.isArray(input.lines) || input.lines.length === 0) throw new StoreError("السلة فارغة", 400);
+  if (input.lines.length > 50) throw new StoreError("عدد الأصناف كبير جداً", 400);
 
   const orderLines: SavedOrder["lines"] = [];
   const lowStock: StockNotification[] = [];
@@ -222,7 +303,8 @@ async function createOrderInFile(input: PlaceOrderInput) {
     const item = database.menu.items.find((candidate) => candidate.id === line.itemId);
     if (!item || !item.available) throw new StoreError("أحد الأصناف لم يعد متاحاً", 409);
 
-    const quantity = Math.max(1, Math.floor(Number(line.quantity) || 1));
+    const quantity = clampQuantity(line.quantity, 50);
+    if (quantity > 50) throw new StoreError(`الحد الأقصى 50 قطعة للصنف: ${item.name}`, 400);
     if (item.trackStock) {
       const before = Math.max(0, item.stock ?? 0);
       if (quantity > before) throw new StoreError(`المتاح من ${item.name} هو ${before} فقط`, 409);
@@ -247,22 +329,32 @@ async function createOrderInFile(input: PlaceOrderInput) {
     orderLines.push({ itemId: item.id, name: item.name, quantity, unitPrice: item.price });
   }
 
+  // احسب الإجمالي على السيرفر - تجاهل total القادم من العميل
+  const serverTotal = computeServerTotal(
+    orderLines.map((l) => ({ price: l.unitPrice, quantity: l.quantity })),
+    database.menu.commerce,
+    input.orderType,
+  );
+
   const order: SavedOrder = {
     id: `ORD-${Date.now().toString(36).toUpperCase()}`,
     createdAt: new Date().toISOString(),
     customer: {
-      name: input.customer?.name?.trim() ?? "",
-      phone: input.customer?.phone?.trim() ?? "",
-      address: input.customer?.address?.trim() ?? "",
-      table: input.customer?.table?.trim() ?? "",
-      notes: input.customer?.notes?.trim() ?? "",
+      name: sanitizeText(input.customer?.name ?? "", 100),
+      phone: sanitizeText(input.customer?.phone ?? "", 30),
+      address: sanitizeText(input.customer?.address ?? "", 500),
+      table: sanitizeText(input.customer?.table ?? "", 20),
+      notes: sanitizeText(input.customer?.notes ?? "", 500),
     },
     orderType: input.orderType,
     lines: orderLines,
-    total: Number(input.total) || 0,
+    total: serverTotal,
   };
 
   database.orders.push(order);
+  // احتفظ بآخر 100 طلب فقط في وضع الملف (منع تضخم)
+  if (database.orders.length > 100) database.orders = database.orders.slice(-100);
+  if (database.notifications.length > 100) database.notifications = database.notifications.slice(-100);
   database.menu.updatedAt = new Date().toISOString();
   await writeFileDatabase(database);
   return { order, lowStock };
@@ -274,7 +366,7 @@ export async function getAdminOverview(token: string | null): Promise<AdminOverv
   if (status.driver === "supabase") {
     if (!token) throw new StoreError("غير مصرّح", 401);
     const result = await fetchAdminOverview(token);
-    if (!result.ok || !result.data) throw new StoreError(result.message || "تعذّر قراءة بيانات اللوحة", result.status || 502);
+    if (!result.ok || !result.data) throw new StoreError("تعذّر قراءة بيانات اللوحة", result.status || 502);
     return result.data;
   }
 
@@ -292,7 +384,7 @@ export async function markNotificationsRead(token: string | null): Promise<void>
   if (status.driver === "supabase") {
     if (!token) throw new StoreError("غير مصرّح", 401);
     const result = await markAllNotificationsRead(token);
-    if (!result.ok) throw new StoreError(result.message || "تعذّر تحديث التنبيهات", result.status || 502);
+    if (!result.ok) throw new StoreError("تعذّر تحديث التنبيهات", result.status || 502);
     return;
   }
 

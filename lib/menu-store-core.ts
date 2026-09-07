@@ -3,6 +3,7 @@ import { normalizeData } from "./normalize";
 import { subscribeRealtime } from "./realtime";
 import { MENU_TABLE, PUBLISHED_SLUG } from "./supabase";
 import { authenticatedFetch } from "./supabase-auth-core";
+import { validateImportedMenu } from "./validation";
 import type { Category, MenuData, MenuItem } from "./types";
 
 export type SaveState = "idle" | "dirty" | "saved" | "error";
@@ -242,11 +243,13 @@ export function exportJson() {
   return JSON.stringify(state.data, null, 2);
 }
 
-/** استيراد نسخة احتياطية — بتتحفظ في الباك إند فوراً */
+/** استيراد نسخة احتياطية — بتتحفظ في الباك إند فوراً مع تحقق شامل */
 export function importJson(text: string) {
   try {
+    if (text.length > 5_000_000) return { ok: false, error: "حجم الملف كبير جداً (الحد 5MB)" };
     const parsed = JSON.parse(text);
-    if (!parsed || !Array.isArray(parsed.items)) return { ok: false, error: "الملف لازم يكون JSON فيه مصفوفة items" };
+    const validation = validateImportedMenu(parsed);
+    if (!validation.ok) return { ok: false, error: validation.error };
     commit(normalizeData({ ...DEFAULT_DATA, ...parsed }));
     return { ok: true };
   } catch (e) {

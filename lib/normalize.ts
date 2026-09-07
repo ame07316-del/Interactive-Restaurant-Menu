@@ -66,6 +66,38 @@ export function normalizeData(raw: unknown): MenuData {
       item.image = LOCAL_IMAGE_MAP[item.id];
     }
   }
+
+  // تعقيم الروابط الخارجية (مكافحة javascript: و open redirect) - للبورتفوليو demo
+  const isSafeHttpUrl = (url: string) => {
+    if (!url || typeof url !== "string") return false;
+    const trimmed = url.trim();
+    if (!trimmed) return false;
+    if (trimmed.startsWith("/") && !trimmed.startsWith("//")) return true;
+    if (trimmed.startsWith("data:image/")) return true;
+    try {
+      const u = new URL(trimmed);
+      return u.protocol === "http:" || u.protocol === "https:";
+    } catch { return false; }
+  };
+  const sanitizeUrl = (url: string) => (isSafeHttpUrl(url) ? url.trim() : "");
+  merged.brand.heroImage = sanitizeUrl(merged.brand.heroImage) || "/images/menu/hero.jpg";
+  merged.brand.logo = merged.brand.logo ? sanitizeUrl(merged.brand.logo) : "";
+  merged.contact.mapUrl = sanitizeUrl(merged.contact.mapUrl);
+  merged.contact.instagram = sanitizeUrl(merged.contact.instagram);
+  merged.contact.facebook = sanitizeUrl(merged.contact.facebook);
+
+  // ضمان أسعار وحدود منطقية (مكافحة حقن أسعار سالبة أو كبيرة)
+  for (const item of merged.items) {
+    if (typeof item.price !== "number" || !Number.isFinite(item.price) || item.price < 0) item.price = 0;
+    if (item.price > 100000) item.price = 100000;
+    if (item.oldPrice != null) {
+      if (typeof item.oldPrice !== "number" || !Number.isFinite(item.oldPrice) || item.oldPrice < 0) item.oldPrice = null;
+      if (item.oldPrice != null && item.oldPrice > 200000) item.oldPrice = 200000;
+    }
+    if (item.image && item.image.length > 500000) item.image = ""; // منع dataURL عملاق
+    if (item.image && !isSafeHttpUrl(item.image)) item.image = "";
+  }
+
   const knownCats = new Set(merged.categories.map((c) => c.id));
   return {
     ...merged,

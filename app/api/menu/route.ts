@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getMenu, replaceMenu, StoreError } from "@/lib/server-database";
 import { bearerToken, checkAdmin } from "@/lib/server-auth";
+import { rateLimit, getClientIp, LIMITS } from "@/lib/rate-limit";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -15,10 +16,8 @@ export async function GET(request: NextRequest) {
     });
   } catch (error) {
     const status = error instanceof StoreError ? error.status : 500;
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "تعذّر قراءة القائمة" },
-      { status },
-    );
+    const message = status >= 500 ? "تعذّر قراءة القائمة" : error instanceof Error ? error.message : "تعذّر قراءة القائمة";
+    return NextResponse.json({ error: message }, { status });
   }
 }
 
@@ -28,14 +27,26 @@ export async function PUT(request: NextRequest) {
   const check = await checkAdmin(token);
   if (!check.ok) return NextResponse.json({ error: check.error }, { status: check.status });
 
+  // Rate limiting للأدمن (20 حفظ / دقيقة لكل IP + توكن)
+  const ip = getClientIp(request);
+  const rl = rateLimit(`menu-save:${ip}:${check.ok ? token?.slice(-8) : "anon"}`, LIMITS.menuSave);
+  if (!rl.success) {
+    return NextResponse.json(
+      { error: "محاولات حفظ كثيرة - حاول بعد دقيقة" },
+      { status: 429, headers: { "Retry-After": String(Math.ceil((rl.resetAt - Date.now()) / 1000)) } },
+    );
+  }
+
   try {
-    const menu = await replaceMenu(await request.json(), token);
+    const body = await request.json();
+    if (JSON.stringify(body).length > 4_000_000) {
+      return NextResponse.json({ error: "البيانات كبيرة جداً (الحد 4MB)" }, { status: 413 });
+    }
+    const menu = await replaceMenu(body, token);
     return NextResponse.json(menu, { headers: { "cache-control": "no-store" } });
   } catch (error) {
     const status = error instanceof StoreError ? error.status : 400;
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "بيانات القائمة غير صالحة" },
-      { status },
-    );
+    const message = status >= 500 ? "خطأ في الخادم" : error instanceof Error ? error.message : "بيانات القائمة غير صالحة";
+    return NextResponse.json({ error: message }, { status });
   }
 }
