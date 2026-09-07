@@ -14,7 +14,7 @@ import {
   savePublishedMenu,
   type PlaceOrderInput,
 } from "./supabase-store";
-import { clampQuantity, isValidOrderType, sanitizeText } from "./validation";
+import { isValidOrderType, sanitizeText } from "./validation";
 import type { AdminOverview, MenuData, SavedOrder, StockNotification } from "./types";
 
 /**
@@ -251,10 +251,14 @@ export async function createOrder(input: PlaceOrderInput): Promise<{ order: Save
       notes: sanitizeText(input.customer?.notes ?? "", 500),
     },
     orderType: input.orderType,
-    lines: input.lines.map((l) => ({
-      itemId: sanitizeText(l.itemId, 50),
-      quantity: clampQuantity(l.quantity, 50),
-    })),
+    lines: input.lines.map((l) => {
+      const rawQty = Math.floor(Number(l.quantity) || 0);
+      if (rawQty < 1 || rawQty > 50) throw new StoreError("الكمية يجب أن تكون بين 1 و 50", 400);
+      return {
+        itemId: sanitizeText(l.itemId, 50),
+        quantity: rawQty,
+      };
+    }),
     total: Number(input.total) || 0,
   };
 
@@ -303,8 +307,9 @@ async function createOrderInFile(input: PlaceOrderInput) {
     const item = database.menu.items.find((candidate) => candidate.id === line.itemId);
     if (!item || !item.available) throw new StoreError("أحد الأصناف لم يعد متاحاً", 409);
 
-    const quantity = clampQuantity(line.quantity, 50);
-    if (quantity > 50) throw new StoreError(`الحد الأقصى 50 قطعة للصنف: ${item.name}`, 400);
+    const rawQty = Math.floor(Number(line.quantity) || 0);
+    if (rawQty < 1 || rawQty > 50) throw new StoreError(`الحد الأقصى 50 قطعة للصنف: ${item.name}`, 400);
+    const quantity = rawQty;
     if (item.trackStock) {
       const before = Math.max(0, item.stock ?? 0);
       if (quantity > before) throw new StoreError(`المتاح من ${item.name} هو ${before} فقط`, 409);
