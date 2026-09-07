@@ -36,9 +36,36 @@ function mergeWithDefaults<T>(base: T, saved: unknown): T {
   return out as T;
 }
 
+/** خريطة الصور الجديدة المحلية — لضمان تحديث أي بيانات قديمة محفوظة (Supabase / ملف محلي) */
+const LOCAL_IMAGE_MAP: Record<string, string> = {
+  i1: "/images/menu/i1.jpg",
+  i2: "/images/menu/i2.jpg",
+  i3: "/images/menu/i3.jpg",
+  i4: "/images/menu/i4.jpg",
+  i5: "/images/menu/i5.jpg",
+  i6: "/images/menu/i6.jpg",
+  i7: "/images/menu/i7.jpg",
+  i8: "/images/menu/i8.jpg",
+  i9: "/images/menu/i9.jpg",
+  i10: "/images/menu/i10.jpg",
+  i11: "/images/menu/i11.jpg",
+  i12: "/images/menu/i12.jpg",
+  i13: "/images/menu/i13.jpg",
+  i14: "/images/menu/i14.jpg",
+};
+
 /** تطبيع أي قائمة قادمة من الباك إند قبل ما تُعرض أو تُحفظ */
 export function normalizeData(raw: unknown): MenuData {
   const merged = mergeWithDefaults<MenuData>(DEFAULT_DATA, raw);
+  // ترقية الصور القديمة (unsplash) للصور الجديدة المحلية — بدون ما نغير أي شيء تاني
+  if (merged.brand.heroImage?.includes("unsplash.com")) {
+    merged.brand.heroImage = "/images/menu/hero.jpg";
+  }
+  for (const item of merged.items) {
+    if (item.image?.includes("unsplash.com") && LOCAL_IMAGE_MAP[item.id]) {
+      item.image = LOCAL_IMAGE_MAP[item.id];
+    }
+  }
   const knownCats = new Set(merged.categories.map((c) => c.id));
   return {
     ...merged,
