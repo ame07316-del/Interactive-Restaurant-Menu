@@ -38,6 +38,14 @@
 - `stock_notifications` — تنبيهات نقص المخزون.
 - `place_order(payload jsonb)` — دالة `SECURITY DEFINER` بتسجّل الطلب وتخصم المخزون
   بشكل ذرّي (`SELECT … FOR UPDATE`) وتنشئ تنبيه النقص.
+- تفعيل **Supabase Realtime** على الجداول (`alter publication supabase_realtime add table ...`)
+  عشان التحديث اللحظي يوصل فوراً لكل الأجهزة عبر WebSocket.
+
+> **التحديث اللحظي الفوري:** تعديلات الأدمن، خصم المخزون بعد أي طلب، الطلبات الجديدة،
+> وتنبيهات النقص بتوصل لكل الأجهزة في نفس اللحظة عن طريق Supabase Realtime (مع فحص
+> دوري احتياطي كل 30-60 ثانية لو الـ WebSocket انقطع). لو البيانات مش بتتحدث لحظياً،
+> نفّذ جزء **Realtime** في آخر `supabase/schema.sql` في SQL Editor — أو شغّل الأمر:
+> `alter publication supabase_realtime add table public.menu_data, public.orders, public.stock_notifications;`
 
 > لحد ما تنفّذ الملف، الموقع بيشتغل على ملف مؤقت للتطوير، وتظهر لك لافتة حمراء في لوحة
 > التحكم تطلب تنفيذ الـ schema.
