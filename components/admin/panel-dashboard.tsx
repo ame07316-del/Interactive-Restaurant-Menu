@@ -17,6 +17,8 @@ import {
 import { useMenu } from "@/lib/use-menu";
 import { Badge, Button, Panel } from "@/components/ui";
 import { cx } from "@/lib/cx";
+import { subscribeRealtime } from "@/lib/realtime";
+import { NOTIFICATIONS_TABLE, ORDERS_TABLE } from "@/lib/supabase";
 import { authenticatedFetch } from "@/lib/supabase-auth-core";
 import type { AdminOverview, SavedOrder, StockNotification } from "@/lib/types";
 
@@ -66,10 +68,21 @@ export function DashboardPanel({ onJump }: { onJump: (tab: string, payload?: str
   }, []);
 
   useEffect(() => {
-    // متابعة لحظية: أي طلب جديد أو تنبيه مخزون يظهر في اللوحة من غير ريفريش
-    const timer = window.setInterval(() => void loadOverview(), 15_000);
+    // متابعة لحظية فورية عبر Supabase Realtime:
+    // أي طلب جديد أو تنبيه مخزون يظهر في اللوحة في نفس اللحظة (WebSocket)
+    const unsubscribe = subscribeRealtime(
+      "realtime:admin-overview",
+      [
+        { table: ORDERS_TABLE, event: "INSERT" },
+        { table: NOTIFICATIONS_TABLE, event: "INSERT" },
+      ],
+      () => void loadOverview(),
+    );
+    // شبكة أمان: فحص دوري كل 30 ثانية لو الـ Realtime انقطع
+    const timer = window.setInterval(() => void loadOverview(), 30_000);
     const kick = window.setTimeout(() => void loadOverview(), 0);
     return () => {
+      unsubscribe();
       window.clearInterval(timer);
       window.clearTimeout(kick);
     };
