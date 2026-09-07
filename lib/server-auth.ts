@@ -31,15 +31,20 @@ export type AdminCheck =
 export const MISSING_SERVER_ENV = "إعدادات Supabase ناقصة على السيرفر";
 export const UNAUTHORIZED = "غير مصرّح — سجّل الدخول من لوحة التحكم";
 
-/** كاش قصير للتحقق عشان منضربش Supabase مع كل طلب */
-const TOKEN_CACHE_TTL = 30_000;
+/** كاش قصير للتحقق عشان منضربش Supabase مع كل طلب - 15 ثانية فقط لتقليل نافذة التوكن الملغي */
+const TOKEN_CACHE_TTL = 15_000;
+const NEGATIVE_CACHE_TTL = 5_000;
+const MAX_CACHE_SIZE = 200;
 const tokenCache = new Map<string, { user: AdminUser | null; expiresAt: number }>();
 
 export function bearerToken(request: NextRequest): string | null {
   const header = request.headers.get("authorization") ?? "";
   if (!header.toLowerCase().startsWith("bearer ")) return null;
   const token = header.slice(7).trim();
-  return token.length > 20 ? token : null;
+  // تحقق أساسي: JWT له 3 أجزاء مفصولة بنقطة وطول معقول
+  if (token.length < 20 || token.length > 5000) return null;
+  if (token.split(".").length !== 3) return null;
+  return token;
 }
 
 async function verifyToken(token: string): Promise<AdminUser | null> {
@@ -61,8 +66,12 @@ async function verifyToken(token: string): Promise<AdminUser | null> {
     user = null;
   }
 
-  if (tokenCache.size > 500) tokenCache.clear();
-  tokenCache.set(token, { user, expiresAt: Date.now() + (user ? TOKEN_CACHE_TTL : 2_000) });
+  // حماية من تضخم الذاكرة - LRU بسيط
+  if (tokenCache.size >= MAX_CACHE_SIZE) {
+    const firstKey = tokenCache.keys().next().value;
+    if (firstKey) tokenCache.delete(firstKey);
+  }
+  tokenCache.set(token, { user, expiresAt: Date.now() + (user ? TOKEN_CACHE_TTL : NEGATIVE_CACHE_TTL) });
   return user;
 }
 

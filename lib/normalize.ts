@@ -36,9 +36,68 @@ function mergeWithDefaults<T>(base: T, saved: unknown): T {
   return out as T;
 }
 
+/** خريطة الصور الجديدة المحلية — لضمان تحديث أي بيانات قديمة محفوظة (Supabase / ملف محلي) */
+const LOCAL_IMAGE_MAP: Record<string, string> = {
+  i1: "/images/menu/i1.jpg",
+  i2: "/images/menu/i2.jpg",
+  i3: "/images/menu/i3.jpg",
+  i4: "/images/menu/i4.jpg",
+  i5: "/images/menu/i5.jpg",
+  i6: "/images/menu/i6.jpg",
+  i7: "/images/menu/i7.jpg",
+  i8: "/images/menu/i8.jpg",
+  i9: "/images/menu/i9.jpg",
+  i10: "/images/menu/i10.jpg",
+  i11: "/images/menu/i11.jpg",
+  i12: "/images/menu/i12.jpg",
+  i13: "/images/menu/i13.jpg",
+  i14: "/images/menu/i14.jpg",
+};
+
 /** تطبيع أي قائمة قادمة من الباك إند قبل ما تُعرض أو تُحفظ */
 export function normalizeData(raw: unknown): MenuData {
   const merged = mergeWithDefaults<MenuData>(DEFAULT_DATA, raw);
+  // ترقية الصور القديمة (unsplash) للصور الجديدة المحلية — بدون ما نغير أي شيء تاني
+  if (merged.brand.heroImage?.includes("unsplash.com")) {
+    merged.brand.heroImage = "/images/menu/hero.jpg";
+  }
+  for (const item of merged.items) {
+    if (item.image?.includes("unsplash.com") && LOCAL_IMAGE_MAP[item.id]) {
+      item.image = LOCAL_IMAGE_MAP[item.id];
+    }
+  }
+
+  // تعقيم الروابط الخارجية (مكافحة javascript: و open redirect) - للبورتفوليو demo
+  const isSafeHttpUrl = (url: string) => {
+    if (!url || typeof url !== "string") return false;
+    const trimmed = url.trim();
+    if (!trimmed) return false;
+    if (trimmed.startsWith("/") && !trimmed.startsWith("//")) return true;
+    if (trimmed.startsWith("data:image/")) return true;
+    try {
+      const u = new URL(trimmed);
+      return u.protocol === "http:" || u.protocol === "https:";
+    } catch { return false; }
+  };
+  const sanitizeUrl = (url: string) => (isSafeHttpUrl(url) ? url.trim() : "");
+  merged.brand.heroImage = sanitizeUrl(merged.brand.heroImage) || "/images/menu/hero.jpg";
+  merged.brand.logo = merged.brand.logo ? sanitizeUrl(merged.brand.logo) : "";
+  merged.contact.mapUrl = sanitizeUrl(merged.contact.mapUrl);
+  merged.contact.instagram = sanitizeUrl(merged.contact.instagram);
+  merged.contact.facebook = sanitizeUrl(merged.contact.facebook);
+
+  // ضمان أسعار وحدود منطقية (مكافحة حقن أسعار سالبة أو كبيرة)
+  for (const item of merged.items) {
+    if (typeof item.price !== "number" || !Number.isFinite(item.price) || item.price < 0) item.price = 0;
+    if (item.price > 100000) item.price = 100000;
+    if (item.oldPrice != null) {
+      if (typeof item.oldPrice !== "number" || !Number.isFinite(item.oldPrice) || item.oldPrice < 0) item.oldPrice = null;
+      if (item.oldPrice != null && item.oldPrice > 200000) item.oldPrice = 200000;
+    }
+    if (item.image && item.image.length > 500000) item.image = ""; // منع dataURL عملاق
+    if (item.image && !isSafeHttpUrl(item.image)) item.image = "";
+  }
+
   const knownCats = new Set(merged.categories.map((c) => c.id));
   return {
     ...merged,

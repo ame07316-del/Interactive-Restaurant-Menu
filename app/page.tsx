@@ -22,6 +22,17 @@ import { CartSheet } from "@/components/public/cart-sheet";
 
 const ALL = "all";
 
+function safeHref(url?: string): string | undefined {
+  if (!url) return undefined;
+  const trimmed = url.trim();
+  if (!trimmed) return undefined;
+  try {
+    const u = new URL(trimmed);
+    if (u.protocol === "http:" || u.protocol === "https:") return trimmed;
+  } catch {}
+  return undefined;
+}
+
 export default function Home() {
   const { data } = useMenu();
   const { brand, commerce, contact, categories, items } = data;
@@ -291,24 +302,24 @@ export default function Home() {
                 <Clock className="mt-0.5 h-3.5 w-3.5 shrink-0 text-accent" /> {contact.openingHours}
               </p>
               {contact.address ? (
-                <a href={contact.mapUrl || undefined} target="_blank" rel="noopener" className="flex items-start gap-2 transition hover:text-accent">
+                <a href={safeHref(contact.mapUrl)} target="_blank" rel="noopener" className="flex items-start gap-2 transition hover:text-accent">
                   <MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0 text-accent" /> {contact.address}
                 </a>
               ) : null}
               {contact.phone ? (
-                <a href={`tel:${contact.phone.replace(/\s/g, "")}`} className="flex items-start gap-2 transition hover:text-accent">
+                <a href={`tel:${contact.phone.replace(/\D/g, "")}`} className="flex items-start gap-2 transition hover:text-accent">
                   <Phone className="mt-0.5 h-3.5 w-3.5 shrink-0 text-accent" /> {contact.phone}
                 </a>
               ) : null}
-              {contact.instagram || contact.facebook ? (
+              {safeHref(contact.instagram) || safeHref(contact.facebook) ? (
                 <p className="flex flex-wrap gap-2 pt-1">
-                  {contact.instagram ? (
-                    <a href={contact.instagram} target="_blank" rel="noopener" className="rounded-lg border border-line px-2.5 py-1 font-bold transition hover:border-accent hover:text-accent">
+                  {safeHref(contact.instagram) ? (
+                    <a href={safeHref(contact.instagram)} target="_blank" rel="noopener" className="rounded-lg border border-line px-2.5 py-1 font-bold transition hover:border-accent hover:text-accent">
                       Instagram
                     </a>
                   ) : null}
-                  {contact.facebook ? (
-                    <a href={contact.facebook} target="_blank" rel="noopener" className="rounded-lg border border-line px-2.5 py-1 font-bold transition hover:border-accent hover:text-accent">
+                  {safeHref(contact.facebook) ? (
+                    <a href={safeHref(contact.facebook)} target="_blank" rel="noopener" className="rounded-lg border border-line px-2.5 py-1 font-bold transition hover:border-accent hover:text-accent">
                       Facebook
                     </a>
                   ) : null}
